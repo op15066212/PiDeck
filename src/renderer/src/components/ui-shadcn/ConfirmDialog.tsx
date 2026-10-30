@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "./alert-dialog";
 import { t } from "../../i18n";
 
@@ -15,11 +16,14 @@ import { t } from "../../i18n";
 export function ConfirmDialog(props: { title: string; message: string; onConfirm: () => void; onCancel: () => void; confirmLabel?: string; danger?: boolean; layer?: "dialog" | "drawer" }) {
 	// 抽屉是 980，弹窗默认 950；+10 只是保证严格在其之上，不改变与其它浮层的相对关系。
 	const layerClassName = props.layer === "drawer" ? "z-[calc(var(--z-drawer)+10)]" : undefined;
+	// 点「确认」也会关闭弹框并触发 onOpenChange(false)：用标记区分来源，
+	// 保证 onCancel 只在真正取消（Cancel/Esc/遮罩）时调用且仅一次，确认路径不误触取消回调。
+	const confirmedRef = useRef(false);
 	return (
 		<AlertDialog
 			open
 			onOpenChange={(open) => {
-				if (!open) props.onCancel();
+				if (!open && !confirmedRef.current) props.onCancel();
 			}}
 		>
 			<AlertDialogContent className={layerClassName} overlayClassName={layerClassName}>
@@ -28,8 +32,15 @@ export function ConfirmDialog(props: { title: string; message: string; onConfirm
 					<AlertDialogDescription>{props.message}</AlertDialogDescription>
 				</AlertDialogHeader>
 				<AlertDialogFooter>
-					<AlertDialogCancel onClick={props.onCancel}>{t("common.cancel")}</AlertDialogCancel>
-					<AlertDialogAction onClick={props.onConfirm} className={props.danger ? "bg-destructive text-destructive-foreground hover:bg-destructive/90" : undefined}>
+					{/* Cancel 按钮自带关闭行为（会走 onOpenChange(false)），不再叠 onClick，避免取消回调双触发 */}
+					<AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
+					<AlertDialogAction
+						onClick={() => {
+							confirmedRef.current = true;
+							props.onConfirm();
+						}}
+						className={props.danger ? "bg-destructive text-destructive-foreground hover:bg-destructive/90" : undefined}
+					>
 						{props.confirmLabel ?? t("common.confirm")}
 					</AlertDialogAction>
 				</AlertDialogFooter>
