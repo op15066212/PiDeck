@@ -206,7 +206,10 @@ test("接线契约：IPC 目标支持 agentId 字符串与 { sessionId }，主�
 });
 
 test("接线契约：技能选择器无 runtime 时走会话级目录，引导页虚拟会话仍显示原提示", () => {
-	assert.match(PICKER_SOURCE, /const dshCatalogSessionId = props\.backend === "dsh"\s*&&\s*!props\.agentId\s*&&\s*props\.sessionId\s*&&\s*!props\.sessionId\.startsWith\("renderer:"\)/);
+	// 虚拟 id 判据走 shared/rendererVirtualSessionId 的单一来源（原为 props.sessionId.startsWith("renderer:")）：
+	// 前缀若变，这里不能留下第二份字面量。
+	assert.match(PICKER_SOURCE, /import \{ isRendererVirtualSessionId \} from "\.\.\/\.\.\/\.\.\/\.\.\/shared\/rendererVirtualSessionId";/);
+	assert.match(PICKER_SOURCE, /const dshCatalogSessionId = props\.backend === "dsh"\s*&&\s*!props\.agentId\s*&&\s*props\.sessionId\s*&&\s*!isRendererVirtualSessionId\(props\.sessionId\)/);
 	assert.match(PICKER_SOURCE, /const blockedByAgent = props\.backend === "dsh"\s*&&\s*!props\.agentId\s*&&\s*!dshCatalogSessionId/);
 	assert.match(PICKER_SOURCE, /listDshSkills\(target\)/);
 	assert.doesNotMatch(PICKER_SOURCE, /sessionStatus/);

@@ -322,6 +322,10 @@ export function useSessionWorkspaceChrome(options: { currentSessionId: string | 
 
 	const togglePin = useCallback(
 		(sessionId: string) => {
+			// 与 registerOpenSession 同源：虚拟 id 不进置顶集合。今天唯一调用方是 Tab 栏
+			// （onTogglePin），引导页不可达；但「钉住当前会话」一类入口一旦出现，写进去的
+			// 虚拟 id 只在下次记录变化/下次启动才被清掉，会把幽灵标签钉死。
+			if (isRendererVirtualSessionId(sessionId)) return;
 			const { tabs, pinned, previewId } = tabsSnapshotRef.current;
 			const next = togglePinSessionTab(tabs, pinned, sessionId);
 			setSessionTabIds(next.tabs);

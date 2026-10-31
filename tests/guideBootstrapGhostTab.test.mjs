@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
 import test from "node:test";
 import { loadTsCommonJs } from "./helpers/loadTsCommonJs.mjs";
 
@@ -46,6 +47,61 @@ test("Tab 清理：虚拟 id 无条件丢弃，未加载项目的真实 id 保�
 	assert.deepEqual([...migrateAndPruneSessionTabIds([GUIDE_BOOTSTRAP_SESSION_ID], new Map(), {}, new Set())], []);
 });
 
+/**
+ * 行为守卫：直接跑 hook 的两个写入口，确认虚拟 id 不进入 Tab 列表、真实会话照旧登记。
+ * 上面几条源码契约只能证明「代码里有一道闸门」，这里证明它真的拦住了写入
+ * （反向也重要：闸门不能退化成「有 record 才登记」，否则未加载项目的真实会话会丢 Tab）。
+ * atom 用哨兵对象按身份分派，不依赖 hook 内部的取值顺序；state 桩只模拟 Tab 列表与记录表。
+ */
+function createChromeHarness() {
+	const atoms = {
+		currentSessionIdAtom: { name: "currentSessionIdAtom" },
+		projectInventoryByIdAtom: { name: "projectInventoryByIdAtom" },
+		sessionRecordByIdAtomFamily: (sessionId) => ({ name: "sessionRecordByIdAtomFamily", sessionId }),
+		sessionRecordsAtom: { name: "sessionRecordsAtom" },
+		sessionTabIdsAtom: { name: "sessionTabIdsAtom" },
+	};
+	const state = { tabs: [], records: {} };
+	const hook = loadTsCommonJs("src/renderer/src/hooks/useSessionWorkspaceChrome.ts", {
+		globals: { localStorage: { getItem: () => null, setItem: () => undefined } },
+		stubs: {
+			react: { useCallback: (callback) => callback, useEffect: () => undefined, useRef: (value) => ({ current: value }), useState: (value) => [typeof value === "function" ? value() : value, () => undefined] },
+			jotai: {
+				useAtomValue: (atom) => (atom === atoms.sessionTabIdsAtom ? state.tabs : atom === atoms.sessionRecordsAtom ? state.records : undefined),
+				useSetAtom: (atom) => (next) => {
+					if (atom !== atoms.sessionTabIdsAtom) return;
+					state.tabs = typeof next === "function" ? next(state.tabs) : next;
+				},
+				useStore: () => ({ get: (atom) => (atom === atoms.sessionRecordsAtom ? state.records : undefined) }),
+			},
+			"../atoms": atoms,
+			"../desktopApi": { desktopApi: {} },
+		},
+	});
+	return { state, chrome: hook.useSessionWorkspaceChrome({ currentSessionId: undefined, activeProjectId: "project-1" }) };
+}
+
+test("行为：虚拟 id 的晋升/登记都不写 Tab 列表，真实会话照旧登记", () => {
+	// 引导页首发链路：promoteAndSend → onPromoteSession → promotePreview → registerOpenSession。
+	// 三次调用都不应该发生写入，所以同一份初始快照下断言「始终为空」；需要串联多次登记
+	// （依赖上一次的 tabs）的用例各用新实例——真实 React 靠重渲染同步快照，harness 不重渲染。
+	const guide = createChromeHarness();
+	guide.chrome.promotePreview(GUIDE_BOOTSTRAP_SESSION_ID);
+	guide.chrome.registerOpenSession(GUIDE_BOOTSTRAP_SESSION_ID, "permanent");
+	guide.chrome.registerOpenSession(GUIDE_BOOTSTRAP_SESSION_ID, "preview");
+	assert.deepEqual([...guide.state.tabs], [], "虚拟 id 写进 Tab 列表就是点不动、按 seen 规则永远清不掉的幽灵标签");
+
+	// 闸门只认前缀：项目未加载、record 暂时缺失的真实会话必须照旧登记（preview 路径也不能误伤）。
+	const real = "2b8e6326-6985-4dbf-9703-0adfa3439f70";
+	const notLoadedYet = "b7c1f0de-0000-4000-8000-000000000001";
+	const permanent = createChromeHarness();
+	permanent.chrome.registerOpenSession(real, "permanent");
+	assert.deepEqual([...permanent.state.tabs], [real], "真实会话的常驻登记不得被闸门误伤");
+	const preview = createChromeHarness();
+	preview.chrome.registerOpenSession(notLoadedYet, "preview");
+	assert.deepEqual([...preview.state.tabs], [notLoadedYet], "闸门不得退化成「record 存在才登记」");
+});
+
 test("无变化时返回原引用（去抖不回归）", () => {
 	const tabs = ["a", "b"];
 	const records = { a: { id: "a" }, b: { id: "b" } };
@@ -83,6 +139,45 @@ test("Tab 登记闸门：registerOpenSession 只拦虚拟 id", () => {
 	assert.doesNotMatch(register, /sessionRecords\[|Boolean\(record\)/, "闸门不得退化成「record 存在才登记」");
 	// 目标条（SessionGoalStrip）等旁路都经 promotePreview → registerOpenSession 汇聚，一处拦截即可。
 	assert.match(chrome, /const promotePreview = useCallback\(\s*\(sessionId: string\) => \{\s*registerOpenSession\(sessionId, "permanent"\);/, "promotePreview 必须复用 registerOpenSession");
+});
+
+test("置顶闸门：togglePin 与登记同源", () => {
+	const chrome = readFileSync("src/renderer/src/hooks/useSessionWorkspaceChrome.ts", "utf8");
+	const toggle = between(chrome, "const togglePin = useCallback(", "const reorderTab = useCallback(");
+	const gateAt = toggle.indexOf("if (isRendererVirtualSessionId(sessionId)) return;");
+	const writeAt = toggle.indexOf("togglePinSessionTab(");
+	assert.ok(gateAt >= 0, "togglePin 必须有虚拟 id 闸门：虚拟 id 被钉住要等下次启动才清得掉");
+	assert.ok(writeAt > gateAt, "闸门必须在写置顶集合之前");
+});
+
+/**
+ * 漂移守卫：源码里出现的每个 `renderer:` 字面量都必须落在这个已知集合里。
+ *
+ * 两处判据不对称是这里存在的理由——登记闸门（isRendererVirtualSessionId）按**前缀**拦住所有
+ * 虚拟 id，而「把虚拟 id 变成真实会话」的落地钩子在 App.ensureSessionForSend 里按
+ * GUIDE_BOOTSTRAP_SESSION_ID **字面量**判定。新增一个虚拟 id 却不动落地钩子 = 发送时被闸门
+ * 拦住、又没有任何路径把它建成真实会话，直接报「会话不存在」。这里逼迫新增者显式登记用途。
+ */
+const KNOWN_RENDERER_LITERALS = new Set([
+	"renderer:", // 前缀定义本体（shared/rendererVirtualSessionId.ts）
+	"renderer:guide-bootstrap", // 引导页虚拟会话：App.ensureSessionForSend 有落地钩子
+	"renderer:mini-new-session", // 迷你浮层模型目录的缓存键，不是会话 id、不参与发送
+	"renderer:log", // IPC 通道名（shared/ipc.ts），与会话 id 无关
+]);
+
+test("虚拟 id 字面量清单：新增必须显式登记（落地钩子按字面量判定）", () => {
+	const files = readdirSync("src", { recursive: true, encoding: "utf8" }).filter((entry) => /\.tsx?$/.test(entry));
+	const found = new Map();
+	for (const relative of files) {
+		const source = readFileSync(join("src", relative), "utf8");
+		for (const match of source.matchAll(/["'`](renderer:[A-Za-z0-9_-]*)["'`]/g)) {
+			if (!found.has(match[1])) found.set(match[1], join("src", relative));
+		}
+	}
+	assert.ok(found.size > 0, "扫描不到任何 renderer: 字面量——扫描表达式或目录结构已失效，守卫形同虚设");
+	for (const [literal, file] of found) {
+		assert.ok(KNOWN_RENDERER_LITERALS.has(literal), `新的 renderer: 字面量 ${literal}（${file}）：登记闸门按前缀拦，但落地钩子按字面量判定——新增虚拟会话必须同步 App.ensureSessionForSend，否则发送直接报「会话不存在」`);
+	}
 });
 
 test("置顶持久化：读入时丢掉历史遗留的虚拟 id", () => {
