@@ -6,6 +6,7 @@ import { resolveBusySendDelivery } from "../../../shared/busySendDelivery";
 import { FILE_TREE_ABSOLUTE_MAX_DEPTH } from "../../../shared/fileTree";
 import { isRemoteProject } from "../../../shared/projectLocation";
 import { classifyCompactError, compactOwnerReason, compactRoutedCommand, type CompactNoticeKind } from "../../../shared/compactFeedback";
+import { isRendererVirtualSessionId } from "../../../shared/rendererVirtualSessionId";
 import { findImageGenProvider } from "../../../shared/imageGenConfig";
 import { findVideoGenProvider } from "../../../shared/videoGenConfig";
 import { buildSessionReferenceContext } from "../../../shared/sessionReferenceContext";
@@ -1576,7 +1577,11 @@ export function useSessionComposerController(options: UseSessionComposerControll
 				// 已折叠进草稿：立即移除 chip（发送成功/失败都会在 clearSnapshot 兜底清空）
 				setPasteFiles([]);
 			}
-			options.onPromoteSession?.(sessionId);
+			// 引导页虚拟会话（renderer:*）没有 Catalog 记录，也不在 Tab 栏里：这里晋升会把一个
+			// 永不存在的 id 尾插成「未命名」幽灵标签（点击取不到 record 直接 no-op，且清理逻辑
+			// 按「见过又消失」判定，虚拟 id 从未进过 sessionRecords，永远清不掉）。真实会话的
+			// id 由 send → ensureSessionId 解析出来后由 App 自己登记 Tab，不需要在这里晋升。
+			if (!isRendererVirtualSessionId(sessionId)) options.onPromoteSession?.(sessionId);
 			return send(behavior, overrideText);
 		},
 		[draft, mode, generateImage, submitVideo, options.onPromoteSession, pasteFiles, send, sessionId, setDraft, setPasteFiles],

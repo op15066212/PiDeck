@@ -7,6 +7,7 @@ import { buildSessionTabBarEntries, flattenSessionTabBarEntries, reorderSessionT
 import { buildSplitLayoutFromDrop, edgeToOrientation, insertRootPaneFromDrop, nestSplitPaneFromDrop, replaceSplitPaneFromDrop, resolveSplitAfterClose, resolveSplitHostSessionId, splitLayoutSessionIds, type SessionSplitDropTarget, type SessionSplitLayout } from "../utils/sessionSplitEdge";
 import { desktopApi } from "../desktopApi";
 import { buildSessionIdAliasMap, remapSessionIds } from "../../../shared/sessionIdAliases";
+import { isRendererVirtualSessionId } from "../../../shared/rendererVirtualSessionId";
 import type { FocusTargetPayload } from "../../../shared/types";
 
 const PINNED_TABS_STORAGE_KEY = "pideck.pinnedSessionTabIds";
@@ -29,11 +30,13 @@ export type SessionWorkspaceFocusHandlers = {
  *
  * 删除判据是「本次运行加载过（`seenSessionIds`）且当前 `sessionRecords` 里已不在」：项目目录按需
  * 加载，启动首帧的空记录表和尚未展开的项目都不代表记录被删，不能凭它们清掉用户的置顶/Tab。
+ * 渲染层虚拟 id（`renderer:*`）无条件丢弃：它没有 Catalog 记录、也永远不会出现在
+ * `sessionRecords` 里，按 seen 规则永远清不掉（会渲染成「未命名」幽灵标签）。
  * 无变化时返回原引用，让 React state 去抖与 localStorage 写入都不白跑。
  */
 export function migrateAndPruneSessionTabIds(current: string[], aliases: ReadonlyMap<string, string>, sessionRecords: Readonly<Record<string, unknown>>, seenSessionIds: ReadonlySet<string>): string[] {
 	const remapped = remapSessionIds(current, aliases);
-	const next = remapped.filter((id) => !seenSessionIds.has(id) || Boolean(sessionRecords[id]));
+	const next = remapped.filter((id) => !isRendererVirtualSessionId(id) && (!seenSessionIds.has(id) || Boolean(sessionRecords[id])));
 	return remapped === current && next.length === current.length ? current : next;
 }
 
@@ -59,7 +62,8 @@ export function useSessionWorkspaceChrome(options: { currentSessionId: string | 
 		try {
 			const raw = localStorage.getItem(PINNED_TABS_STORAGE_KEY);
 			const parsed = raw ? JSON.parse(raw) : [];
-			return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === "string") : [];
+			// 旧版本可能把引导页虚拟 id 固定过（渲染成「未命名」幽灵标签）：读入时直接丢掉。
+			return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === "string" && !isRendererVirtualSessionId(id)) : [];
 		} catch {
 			return [];
 		}
@@ -196,6 +200,9 @@ export function useSessionWorkspaceChrome(options: { currentSessionId: string | 
 	/** 在 App / 侧栏边界登记 Tab（preview / permanent）；与 selectSession 解耦 */
 	const registerOpenSession = useCallback(
 		(sessionId: string, mode: SessionTabOpenMode = "permanent") => {
+			// 虚拟 id（renderer:*）不登记：它没有 Catalog 记录，登记只会得到一张点不动、清不掉的
+			// 「未命名」幽灵标签。真实会话即使项目未加载（record 暂时缺失）也不受影响。
+			if (isRendererVirtualSessionId(sessionId)) return;
 			const { tabs, pinned, previewId } = tabsSnapshotRef.current;
 			// 虚拟引导 Tab 只承载空态输入框；真实会话打开后替换它，不留下“未命名”空 Tab。
 			const tabsWithoutGuide = sessionId === GUIDE_BOOTSTRAP_SESSION_ID ? tabs : tabs.filter((id) => id !== GUIDE_BOOTSTRAP_SESSION_ID);
