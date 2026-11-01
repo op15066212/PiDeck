@@ -61,6 +61,24 @@ export const RAIL_RECENT_TICK_ITEMS = 60;
  *  用户点一个「⋯」得到报错。点击它 = 打开目录面板（那才是查更早内容的入口）。
  *  判断分支在 SurfaceComponents 的 onItemSelect 里，两边都写了注释。
  */
+/**
+ * 刻度间距：按**实际渲染条数**算，不是按 railBuckets 之前那个数。
+ *
+ *  PreviewRail 的导轨总高 = items.length x itemSize（preview-rail.tsx 的 rowTemplate），
+ *  而 planRailTicks 的分母是 visibleItems.length —— 顶端占位项让实际条数多 1，
+ *  直接用 plan.itemSize 会让总高超出容器：h=800、count=66 时 plan 给 12px，
+ *  67 x 12 = 804 就把导轨撑破（刻度被裁或顶出视口）。
+ *
+ *  下限 RAIL_TICK_MIN_SIZE 仍然生效，所以**调用方必须保证 total <= floor(h/12)**，
+ *  否则 12px 的下限会把总高顶破 —— 占位项要从 railCapacity 里扣掉一格，
+ *  这个扣除在 SurfaceComponents 的 railLimit 里做，两边是一对。
+ */
+export function planRailItemSize(total: number, availableHeight: number, fallback: number): number {
+	if (total === 0 || availableHeight <= 0) return fallback;
+	const fitted = Math.floor(availableHeight / total);
+	return Math.max(RAIL_TICK_MIN_SIZE, Math.min(RAIL_TICK_MAX_SIZE, fitted));
+}
+
 export const OUTLINE_WINDOW_HEAD_ID = "outline-window-head";
 
 /**

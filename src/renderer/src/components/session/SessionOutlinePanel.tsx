@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import { t } from "../../i18n";
 import { planOutlineQuery } from "./timeline/outlineQueryPolicy";
 import type { OutlineRailItem } from "./timeline/outlineRailTicks";
 
@@ -116,7 +117,7 @@ export function SessionOutlinePanel(props: { items: readonly OutlineRailItem[]; 
 		if (target) onJump(target.item.id);
 	}, [jumpIndex, onJump]);
 
-	const hint = plan.kind === "invalid" ? `只有 1–${items.length}` : plan.kind === "filter" ? `命中 ${rows.length}` : "";
+	const hint = plan.kind === "invalid" ? t("outline.onlyRange", { count: items.length }) : plan.kind === "filter" ? t("outline.hits", { count: rows.length }) : "";
 	const activeSourceIndex = plan.kind === "jump" ? plan.index : activeId ? items.findIndex((item) => item.id === activeId) : -1;
 
 	return (
@@ -124,7 +125,7 @@ export function SessionOutlinePanel(props: { items: readonly OutlineRailItem[]; 
 			className="session-outline-panel pointer-events-auto flex flex-col overflow-hidden rounded-xl border border-border bg-bg-panel shadow-lg"
 			style={{ width: SESSION_OUTLINE_PANEL_WIDTH_PX }}
 			role="dialog"
-			aria-label="会话目录"
+			aria-label={t("outline.panel")}
 			onKeyDown={(event) => {
 				// 焦点会移到列表项按钮上，Esc 必须挂在根节点，否则只有输入框有焦点时才管用
 				if (event.key === "Escape") {
@@ -141,11 +142,11 @@ export function SessionOutlinePanel(props: { items: readonly OutlineRailItem[]; 
 					onKeyDown={(event) => {
 						if (event.key === "Enter") commitJump();
 					}}
-					placeholder="搜索，或输入条数回车"
-					aria-label="搜索目录条目，或输入第几条跳转"
+					placeholder={t("outline.searchPlaceholder")}
+					aria-label={t("outline.searchAria")}
 					className="min-w-0 flex-1 rounded-md bg-muted/60 px-2 py-1 text-xs outline-none placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-accent"
 				/>
-				<button type="button" onClick={onClose} aria-label="收起目录" className="shrink-0 rounded-md px-1.5 py-1 text-xs text-muted-foreground hover:bg-muted/60 hover:text-foreground">
+				<button type="button" onClick={onClose} aria-label={t("outline.collapse")} className="shrink-0 rounded-md px-1.5 py-1 text-xs text-muted-foreground hover:bg-muted/60 hover:text-foreground">
 					×
 				</button>
 			</div>
@@ -180,7 +181,8 @@ export function SessionOutlinePanel(props: { items: readonly OutlineRailItem[]; 
 			    两者不是同一口径的边界。不改逻辑（那边 max 有它自己的理由），只说明差异来源，
 			    否则以后有人对着两个数找不到原因。 */}
 			<div className="border-t border-border px-2 py-1.5 text-micro text-muted-foreground">
-				共 {items.length} 条{hint ? ` · ${hint}` : ""}
+				{t("outline.total", { count: items.length })}
+				{hint ? ` · ${hint}` : ""}
 			</div>
 		</div>
 	);

@@ -6,7 +6,7 @@ import { MarkdownStream } from "./MarkdownStream";
 import { SettledLongAnswer } from "./SettledLongAnswer";
 import { shouldCollapseSettledText } from "./markdownStreamPolicy";
 import { PreviewRail, type PreviewRailItem } from "../motion/preview-rail";
-import { OUTLINE_WINDOW_HEAD_ID, RAIL_RECENT_TICK_ITEMS, planRailTicks, railBuckets, railCapacity } from "./timeline/outlineRailTicks";
+import { OUTLINE_WINDOW_HEAD_ID, RAIL_RECENT_TICK_ITEMS, planRailItemSize, planRailTicks, railBuckets, railCapacity } from "./timeline/outlineRailTicks";
 import { SessionOutlinePanel } from "./SessionOutlinePanel";
 import { areOutlineRailItemsEqual, createOutlineItemIndex, resolveVisibleRailActiveId } from "./timeline/outlineRailActive";
 import { useTimelineOutlineActiveId } from "./timeline/useTimelineOutlineActiveId";
@@ -1388,7 +1388,14 @@ function ConversationOutlineView(props: ConversationOutlineProps) {
 	// 落到段首，看起来就是「定位到别的地方」（2026-11 真机，85 轮会话）。
 	// 早先还试过「以阅读位置为中心的滑动窗口」：纵向位置不等于会话进度、翻上翻下整列平移。
 	// 先按源下标定位 active（高亮用），再分段、再规划间距。
-	const railLimit = useMemo(() => railCapacity(availableHeight), [availableHeight]);
+	// 顶端占位项要从容量里扣掉一格：PreviewRail 的总高 = 条数 x 间距，而间距有 12px 硬下限。
+	// 不扣的话 h=792（capacity=66）时 67 根 x 12 = 804 > 792，导轨溢出。
+	// 扣除后 total <= floor(h/12)，planRailItemSize 的 12px 下限才一定落得下。
+	const railLimit = useMemo(() => {
+		const capacity = railCapacity(availableHeight);
+		const hasHead = props.items.length > RAIL_RECENT_TICK_ITEMS;
+		return Math.max(1, capacity - (hasHead ? 1 : 0));
+	}, [availableHeight, props.items.length]);
 	// 刻度条只覆盖最近 N 条，更早的交给展开态面板。
 	// 真正的好处不是「变短」，是恢复定位精度：railCapacity 约 66 根（800px 屏），
 	// 147 条 > 66 只能均分、每根代表 2.2 条，点一根只落到段首；60 <= 66 就回到
@@ -1410,8 +1417,8 @@ function ConversationOutlineView(props: ConversationOutlineProps) {
 				? [
 						{
 							id: OUTLINE_WINDOW_HEAD_ID,
-							label: "更早 · 前 " + windowStart + " 条",
-							ariaLabel: "还有 " + windowStart + " 条更早的，打开目录查看",
+							label: t("outline.earlier", { count: windowStart }),
+							ariaLabel: t("outline.earlierAria", { count: windowStart }),
 							description: "",
 							muted: true,
 						},
@@ -1428,6 +1435,14 @@ function ConversationOutlineView(props: ConversationOutlineProps) {
 		],
 		[plan.items, windowStart],
 	);
+	// 间距必须按**实际渲染条数**算，不能直接用 plan.itemSize：planRailTicks 的分母是
+	// visibleItems.length，而 PreviewRail 的导轨总高 = items.length x itemSize，
+	// 占位项让实际条数多 1。h=800、count=66 时 plan 给 12px，67 x 12 = 804 就把容器撑破。
+	// 判据：railItems.length x railItemSize <= availableHeight。
+	const railItemSize = useMemo(() => {
+		const total = railItems.length;
+		return planRailItemSize(total, availableHeight, plan.itemSize);
+	}, [railItems.length, availableHeight, plan.itemSize]);
 	const visibleRailActiveId = useMemo(() => resolveVisibleRailActiveId(railActiveId, windowItemIndex, plan.items), [railActiveId, windowItemIndex, plan.items]);
 
 	return (
@@ -1448,7 +1463,7 @@ function ConversationOutlineView(props: ConversationOutlineProps) {
 			) : (
 				<>
 					{/* 展开入口：目标未加载时按钮也会先补页，所以没条目时仍要能点开 */}
-					<button type="button" onClick={() => setExpanded(true)} aria-label="展开会话目录" className="pointer-events-auto mb-1 rounded-md px-1.5 py-1 text-xs text-muted-foreground hover:bg-muted/60 hover:text-foreground">
+					<button type="button" onClick={() => setExpanded(true)} aria-label={t("outline.expand")} className="pointer-events-auto mb-1 rounded-md px-1.5 py-1 text-xs text-muted-foreground hover:bg-muted/60 hover:text-foreground">
 						☰
 					</button>
 					{railItems.length > 0 && (
@@ -1456,7 +1471,7 @@ function ConversationOutlineView(props: ConversationOutlineProps) {
 							orientation="vertical"
 							items={railItems}
 							label={t("outline.title")}
-							itemSize={plan.itemSize}
+							itemSize={railItemSize}
 							previewSide="before"
 							activeId={visibleRailActiveId}
 							highlightActive={visibleRailActiveId !== undefined}
