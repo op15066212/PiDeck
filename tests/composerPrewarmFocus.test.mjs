@@ -27,6 +27,12 @@ const browsePin = compile("src/renderer/src/hooks/timeline/browsePin.ts");
 // 不再用正则去钉实现字符串。
 const visibleRowsModule = compile("src/renderer/src/hooks/timeline/useVisibleTimelineRows.ts", { react: {} });
 
+// 分批扩窗的纯函数（2026-11 从控制器提出）：控制器 import 它，测试里补真模块而不是 stub，
+// 因为这层逻辑本身有行为测试，stub 掉等于让控制器测试跑在假实现上。
+const windowExpandPlan = compile("src/renderer/src/components/session/timeline/windowExpandPlan.ts");
+// 流式跳转仲裁的纯判定（2026-11 新增）：同样编译真模块；stub 成恒 false 会让
+// 「点刻度时该忽略贴底上报」的行为测试永远绿在假实现上。
+const timelineJumpGuard = compile("src/renderer/src/hooks/timelineJumpGuard.ts");
 const timeline = compile("src/renderer/src/hooks/useSessionTimelineController.ts", {
 	react: {},
 	jotai: { atom: (value) => ({ _mockInit: value }) },
@@ -38,6 +44,11 @@ const timeline = compile("src/renderer/src/hooks/useSessionTimelineController.ts
 	"../desktopApi": {},
 	// 合并 origin/dev 后 controller 直接引用首屏分页函数；测试不驱动磁盘分页，给最小 stub。
 	"../components/session/sessionSubagentTranscript": { readSessionFirstScreenPage: async () => ({ messages: [], hasMore: false }) },
+	// 分批扩窗的纯函数（2026-11 从 controller 提出）：编译真模块而不是 stub ——
+	// 这层逻辑自己有行为测试，stub 掉等于让本测试跑在假实现上。
+	"../components/session/timeline/windowExpandPlan": windowExpandPlan,
+	// 流式跳转仲裁的纯判定（2026-11 新增）：同样编译真模块，别 stub 成恒 false。
+	"./timelineJumpGuard": timelineJumpGuard,
 	// 控制器用 t() 播报「DSH 已停止」文案，而 i18n.ts 会拉起整份字典 → 给最小 stub；
 	// sessionHistoryAvailability 是纯函数（只有 type import），照 browsePin 的做法编译真模块。
 	// 两个都必须在 stub 表里：缺失时 loader 回落到以 tests/ 为基准的 nodeRequire，解析 .ts 必失败。
