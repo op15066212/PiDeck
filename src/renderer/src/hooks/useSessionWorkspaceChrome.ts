@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useAtomValue, useSetAtom, useStore } from "jotai";
 import { currentSessionIdAtom, projectInventoryByIdAtom, sessionRecordByIdAtomFamily, sessionRecordsAtom, sessionTabIdsAtom } from "../atoms";
 import { cycleSessionTab, openPermanentSessionTab, openPreviewSessionTab, togglePinSessionTab, type SessionTabOpenMode } from "../utils/sessionTabs";
+import { GUIDE_BOOTSTRAP_SESSION_ID } from "../utils/chatSessionBootstrap";
 import { buildSessionTabBarEntries, flattenSessionTabBarEntries, reorderSessionTabsByDisplayOrder, GROUP_COLOR_VALUES } from "../utils/sessionTabGroups";
 import { buildSplitLayoutFromDrop, edgeToOrientation, insertRootPaneFromDrop, nestSplitPaneFromDrop, replaceSplitPaneFromDrop, resolveSplitAfterClose, resolveSplitHostSessionId, splitLayoutSessionIds, type SessionSplitDropTarget, type SessionSplitLayout } from "../utils/sessionSplitEdge";
 import { desktopApi } from "../desktopApi";
@@ -196,7 +197,9 @@ export function useSessionWorkspaceChrome(options: { currentSessionId: string | 
 	const registerOpenSession = useCallback(
 		(sessionId: string, mode: SessionTabOpenMode = "permanent") => {
 			const { tabs, pinned, previewId } = tabsSnapshotRef.current;
-			const result = mode === "preview" ? openPreviewSessionTab(tabs, pinned, previewId, sessionId) : openPermanentSessionTab(tabs, pinned, previewId, sessionId);
+			// 虚拟引导 Tab 只承载空态输入框；真实会话打开后替换它，不留下“未命名”空 Tab。
+			const tabsWithoutGuide = sessionId === GUIDE_BOOTSTRAP_SESSION_ID ? tabs : tabs.filter((id) => id !== GUIDE_BOOTSTRAP_SESSION_ID);
+			const result = mode === "preview" ? openPreviewSessionTab(tabsWithoutGuide, pinned, previewId, sessionId) : openPermanentSessionTab(tabsWithoutGuide, pinned, previewId, sessionId);
 			// 已打开的常驻 Tab 复用原数组：相同引用写 jotai 会被 Object.is 跳过。
 			setSessionTabIds(result.tabs);
 			setPreviewSessionTabId((current) => (current === result.previewId ? current : result.previewId));
