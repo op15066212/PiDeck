@@ -95,6 +95,10 @@ type TimelineAnchor = {
 	generation: number;
 	/** 保持旧视口：即使原视口在顶部也只让新历史出现在上方。 */
 	preserveAtTop?: boolean;
+	/** 这次请求是否打开过整表渲染：只有打开过的才允许在消费点调用 end。
+	 *  没打开却调 end 会 ++token 并排一帧 setPrependSolid(false)，把扩窗路径
+	 *  刚打开、还在消费中的整表渲染一并关掉。 */
+	solidOpened?: boolean;
 };
 
 export function isTimelineAtBottom(scrollTop: number, scrollHeight: number, clientHeight: number): boolean {
@@ -1457,6 +1461,7 @@ export function useSessionTimelineController(options: { sessionId?: string; mess
 						top: timeline.scrollTop,
 						generation: historyBrowseGenerationRef.current,
 						...(source === "scroll" ? { preserveAtTop: true } : {}),
+						solidOpened: source === "scroll",
 					},
 				};
 			}
@@ -1468,9 +1473,14 @@ export function useSessionTimelineController(options: { sessionId?: string; mess
 				const sequence = ++nextLoadSequence;
 				trackLatestLoad(sessionId, sequence);
 				const expectedRevision = cachedEntry?.revision ?? 0;
-				// 只在这里开整表渲染：上面的早退（无 sessionId / 无 before / 正在加载）
-				// 发生在 begin 之前，不需要配对的 end —— 出口与入口相邻，漏一次也不会漏第二次。
-				beginPrependSolid();
+				// 只有 scroll（滚到顶部自动翻页）需要整表渲染：它要在 useLayoutEffect 里按 messageId
+				// 查 DOM 行做 pin 补偿（pinBrowseRow -> measurePinnedRowTop），虚拟区外的行不在
+				// DOM 里就量不到。button / backfill 走 resolveTimelineTopCompensation：补偿量 =
+				// scrollHeight 差值（虚拟区占位高度是渲染期同步算出的，两次读数即得），不查任何
+				// DOM —— 所以不必关闭虚拟化。用户点「加载更多」时把 100+ 轮全部真实挂载，正是
+				// 「点了就卡」的主因。
+				const needsSolid = source === "scroll";
+				if (needsSolid) beginPrependSolid();
 				let insertionCommitted = false;
 				setIsLoadingMessagePage(true);
 				// 重试时先清掉上一次的错误行
@@ -1520,7 +1530,7 @@ export function useSessionTimelineController(options: { sessionId?: string; mess
 						// 插入没落地（早退 / 失败 / 空页 / prepend 被拒）：useLayoutEffect 依赖 visibleMessages.length，
 						// 没插入就不跑，也就没人关整表渲染 —— 它只能等 1.5s 兜底，超时那刻虚拟化接管、
 						// 未挂载行从实测高度回退估算、总高度突变 -> 重排 -> 抖。点几次就种几次跳。
-						if (!insertionCommitted) endPrependSolid();
+						if (needsSolid && !insertionCommitted) endPrependSolid();
 					});
 				return;
 			}
@@ -1544,9 +1554,14 @@ export function useSessionTimelineController(options: { sessionId?: string; mess
 				const sequence = ++nextLoadSequence;
 				trackLatestLoad(sessionId, sequence);
 				const expectedRevision = cachedEntry?.revision ?? 0;
-				// 只在这里开整表渲染：上面的早退（无 sessionId / 无 before / 正在加载）
-				// 发生在 begin 之前，不需要配对的 end —— 出口与入口相邻，漏一次也不会漏第二次。
-				beginPrependSolid();
+				// 只有 scroll（滚到顶部自动翻页）需要整表渲染：它要在 useLayoutEffect 里按 messageId
+				// 查 DOM 行做 pin 补偿（pinBrowseRow -> measurePinnedRowTop），虚拟区外的行不在
+				// DOM 里就量不到。button / backfill 走 resolveTimelineTopCompensation：补偿量 =
+				// scrollHeight 差值（虚拟区占位高度是渲染期同步算出的，两次读数即得），不查任何
+				// DOM —— 所以不必关闭虚拟化。用户点「加载更多」时把 100+ 轮全部真实挂载，正是
+				// 「点了就卡」的主因。
+				const needsSolid = source === "scroll";
+				if (needsSolid) beginPrependSolid();
 				let insertionCommitted = false;
 				setIsLoadingMessagePage(true);
 				// 重试时先清掉上一次的错误行
@@ -1596,7 +1611,7 @@ export function useSessionTimelineController(options: { sessionId?: string; mess
 						// 插入没落地（早退 / 失败 / 空页 / prepend 被拒）：useLayoutEffect 依赖 visibleMessages.length，
 						// 没插入就不跑，也就没人关整表渲染 —— 它只能等 1.5s 兜底，超时那刻虚拟化接管、
 						// 未挂载行从实测高度回退估算、总高度突变 -> 重排 -> 抖。点几次就种几次跳。
-						if (!insertionCommitted) endPrependSolid();
+						if (needsSolid && !insertionCommitted) endPrependSolid();
 					});
 				return;
 			}
@@ -1985,7 +2000,7 @@ export function useSessionTimelineController(options: { sessionId?: string; mess
 			loadMoreAnchorRef.current = undefined;
 			// 插入已被消费（跟底中或代数过期，不恢复锚点），必须在这里释放：否则
 			// prependSolid 只能靠 beginPrependSolid 的 1.5s 超时解除，期间强制整表渲染。
-			endPrependSolid();
+			if (anchor.value.solidOpened) endPrependSolid();
 			return;
 		}
 		// 滚动翻页：钉住正在看的那一轮（不是整页 scrollHeight 差）。
@@ -1994,7 +2009,7 @@ export function useSessionTimelineController(options: { sessionId?: string; mess
 			pinBrowseRow();
 			loadMoreAnchorRef.current = undefined;
 			// 插入已被消费：解除整表渲染（推迟一帧，让这次补偿先落定）。
-			endPrependSolid();
+			if (anchor.value.solidOpened) endPrependSolid();
 			return;
 		}
 		const heightDelta = timeline.scrollHeight - anchor.value.height;
@@ -2007,12 +2022,24 @@ export function useSessionTimelineController(options: { sessionId?: string; mess
 			// 从实测高度回退估算、总高度突变 → 重排 → 视口轻跳（用户报的「点了几次，内容变多了，但有点抖」）。
 			loadMoreAnchorRef.current = undefined;
 			markProgrammaticScroll();
-			endPrependSolid();
+			if (anchor.value.solidOpened) endPrependSolid();
 			return;
 		}
 		pinViewportAfterPrepend(nextScrollTop);
+		// 探针：默认静默，在控制台执行 window.__PIDECK_PREPEND_DEBUG__ = true 后生效。
+		// 用户报「跳/不跳」是主观描述；有了 delta 与写入前后的 scrollTop 才能判断
+		// 是估算高度差还是时序问题。（不用 import.meta.env.DEV：测试沙箱按 CJS 转译，
+		// import.meta 在那里不可用，会让整份 controller 加载失败。）
+		if ((window as { __PIDECK_PREPEND_DEBUG__?: boolean }).__PIDECK_PREPEND_DEBUG__ === true) {
+			console.info("[prepend-compensation]", {
+				delta: heightDelta,
+				prevTop: anchor.value.top,
+				nextTop: nextScrollTop,
+				afterTop: timeline.scrollTop,
+			});
+		}
 		loadMoreAnchorRef.current = undefined;
-		endPrependSolid();
+		if (anchor.value.solidOpened) endPrependSolid();
 	}, [controllerEnabled, endPrependSolid, markProgrammaticScroll, ownerKey, pinBrowseRow, pinViewportAfterPrepend, visibleMessages.length]);
 
 	// 浏览态内容后增高（历史 Markdown 轻量→全量、图片、mermaid）：扩窗那一帧的补偿不够，
