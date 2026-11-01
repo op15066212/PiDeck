@@ -6,7 +6,7 @@ import { MarkdownStream } from "./MarkdownStream";
 import { SettledLongAnswer } from "./SettledLongAnswer";
 import { shouldCollapseSettledText } from "./markdownStreamPolicy";
 import { PreviewRail, type PreviewRailItem } from "../motion/preview-rail";
-import { planRailTicks, railBuckets, railCapacity } from "./timeline/outlineRailTicks";
+import { OUTLINE_WINDOW_HEAD_ID, RAIL_RECENT_TICK_ITEMS, planRailTicks, railBuckets, railCapacity } from "./timeline/outlineRailTicks";
 import { SessionOutlinePanel } from "./SessionOutlinePanel";
 import { areOutlineRailItemsEqual, createOutlineItemIndex, resolveVisibleRailActiveId } from "./timeline/outlineRailActive";
 import { useTimelineOutlineActiveId } from "./timeline/useTimelineOutlineActiveId";
@@ -1383,19 +1383,41 @@ function ConversationOutlineView(props: ConversationOutlineProps) {
 		observer.observe(element);
 		return () => observer.disconnect();
 	}, []);
-	const outlineItemIndex = useMemo(() => createOutlineItemIndex(props.items), [props.items]);
 	// 条数与取哪几条：railBuckets —— 段数按可用高度算（railCapacity），**能一条一根就
 	// 一条一根**，放不下才均分、每段只画段首。固定 30 段时一根代表好几条提问，点下去只能
 	// 落到段首，看起来就是「定位到别的地方」（2026-11 真机，85 轮会话）。
 	// 早先还试过「以阅读位置为中心的滑动窗口」：纵向位置不等于会话进度、翻上翻下整列平移。
 	// 先按源下标定位 active（高亮用），再分段、再规划间距。
-	const activeSourceIndex = railActiveId === undefined ? -1 : (outlineItemIndex.get(railActiveId) ?? -1);
 	const railLimit = useMemo(() => railCapacity(availableHeight), [availableHeight]);
-	const visibleItems = useMemo(() => railBuckets(props.items, railLimit), [props.items, railLimit]);
+	// 刻度条只覆盖最近 N 条，更早的交给展开态面板。
+	// 真正的好处不是「变短」，是恢复定位精度：railCapacity 约 66 根（800px 屏），
+	// 147 条 > 66 只能均分、每根代表 2.2 条，点一根只落到段首；60 <= 66 就回到
+	// 「能一条一根就一条一根」—— 那本来就是这段代码的设计意图。
+	// 用固定尾部窗口而不是「跟随阅读位置的滑动窗口」：后者被否决过（纵向位置不代表
+	// 会话第几成、翻上翻下整列平移）。
+	const windowStart = Math.max(0, props.items.length - RAIL_RECENT_TICK_ITEMS);
+	const windowItems = useMemo(() => (windowStart > 0 ? props.items.slice(windowStart) : props.items), [props.items, windowStart]);
+	// 索引表必须与被压缩的集合同源：用全量建表、拿切片后的 plan.items 去查，
+	// resolveVisibleRailActiveId 找不到最近的一根时会**退到边界那根**（它遍历 railItems
+	// 取 distance 最小，越界不返回 undefined）—— 用户在第 21 条，高亮会落到第 88 条。
+	const windowItemIndex = useMemo(() => createOutlineItemIndex(windowItems), [windowItems]);
+	const visibleItems = useMemo(() => railBuckets(windowItems, railLimit), [windowItems, railLimit]);
 	const plan = useMemo(() => planRailTicks(visibleItems, availableHeight), [visibleItems, availableHeight]);
+	// 顶端占位项标出「上面还有更早的」；点击它打开面板，不走消息跳转。
 	const railItems = useMemo<PreviewRailItem[]>(
-		() =>
-			plan.items.map((item) => ({
+		() => [
+			...(windowStart > 0
+				? [
+						{
+							id: OUTLINE_WINDOW_HEAD_ID,
+							label: "更早 · 前 " + windowStart + " 条",
+							ariaLabel: "还有 " + windowStart + " 条更早的，打开目录查看",
+							description: "",
+							muted: true,
+						},
+					]
+				: []),
+			...plan.items.map((item) => ({
 				id: item.id,
 				label: item.title,
 				ariaLabel: item.title,
@@ -1403,9 +1425,10 @@ function ConversationOutlineView(props: ConversationOutlineProps) {
 				// 目录里有、还没加载的检查点：画淡一档，点之前就知道要补页
 				muted: item.pending === true,
 			})),
-		[plan.items],
+		],
+		[plan.items, windowStart],
 	);
-	const visibleRailActiveId = useMemo(() => resolveVisibleRailActiveId(railActiveId, outlineItemIndex, plan.items), [railActiveId, outlineItemIndex, plan.items]);
+	const visibleRailActiveId = useMemo(() => resolveVisibleRailActiveId(railActiveId, windowItemIndex, plan.items), [railActiveId, windowItemIndex, plan.items]);
 
 	return (
 		<div ref={containerRef} className={cn("outline-hover pointer-events-none", props.className)}>
@@ -1438,6 +1461,12 @@ function ConversationOutlineView(props: ConversationOutlineProps) {
 							activeId={visibleRailActiveId}
 							highlightActive={visibleRailActiveId !== undefined}
 							onItemSelect={(item) => {
+								// 顶端占位项不是消息：交给 pendingRailJump 会走 jumpToMessage 查不到节点、
+								// 弹「跳转失败」。它代表「更早的那 N 条」，点了就打开面板。
+								if (item.id === OUTLINE_WINDOW_HEAD_ID) {
+									setExpanded(true);
+									return;
+								}
 								setRailActiveId(item.id);
 								props.onJump(item.id);
 							}}
