@@ -791,10 +791,27 @@ export function SessionMessageTimeline(props: SessionMessageTimelineProps) {
 	// 与 renderRunItem 首行、VirtualRunList 的 entries 共用同一份「是否产出 DOM」判据：
 	// 判定放宽会为空行多吃一条行距，收紧会把卡片从虚拟区静默丢掉（#401 评审）。
 	const isRenderableItem = useCallback((item: RenderMessage) => isRenderableRunItem(item), []);
+	/** 这一轮是否包含指定消息：钉行的 messageId 要映射到它所在的 run。 */
+	const runContainsMessageId = useCallback((item: RenderMessage, messageId: string): boolean => {
+		if (item.kind === "agent-run") {
+			// MessageItem 用 message.id；其余 group 类型的 id 与触发它的消息 id 一致（见 AppUtils）。
+			return item.items.some((sub) => (sub.kind === "message" ? sub.message.id === messageId : sub.id === messageId));
+		}
+		if (item.kind === "message") return item.message.id === messageId;
+		return item.id === messageId;
+	}, []);
 	// 恢复锚点 / 挂起跳转在途：这两条路径按 [data-message-id] 查 DOM，虚拟区外的行不在 DOM 里。
 	// 交给 VirtualRunList 的 solid 模式（同一组件内整表真实渲染），不换组件类型 ——
 	// 换类型会整棵卸载，heightsRef 的高度缓存丢失，恢复完成后按估值重排会跳位。
 	const navBlocked = props.controller.navBlockingVirtualization;
+	// 渲染期现算（不用 useMemo）：读的是 ref，pin 变化不会触发渲染；扩窗每帧
+	// setScrolledWindowTurns 会重渲染，这里跟着重算。O(轮数) 的一次 find。
+	const pinnedRunKeys: readonly string[] = (() => {
+		const pinnedId = props.controller.readPinnedMessageId?.();
+		if (!pinnedId) return [];
+		const hit = displayRuns.find((item) => runContainsMessageId(item, pinnedId));
+		return hit ? [virtualRunId(hit)] : [];
+	})();
 	// 宿主插件按 entryId 导航：目标轮可能在虚拟区外（没有 DOM）。hook 派发渲染层事件，
 	// 这里转给 controller.jumpToMessage——它会挂起 pendingJump 并整表真实渲染后精确落位。
 	// 事件带 sessionId：插件刚 selectSession 时本组件可能还挂在旧会话，先存下来等切到位再跳。
@@ -1139,6 +1156,7 @@ export function SessionMessageTimeline(props: SessionMessageTimelineProps) {
 						isAgentRun={isAgentRunItem}
 						isRenderable={isRenderableItem}
 						solid={navBlocked || multiSelectExporting}
+						pinnedRunKeys={pinnedRunKeys}
 						onBeforeScrollCorrection={controller.markProgrammaticScroll}
 					/>
 

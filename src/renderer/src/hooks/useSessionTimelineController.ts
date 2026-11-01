@@ -397,6 +397,8 @@ export type SessionTimelineController = {
 	 * 虚拟区外的行不在 DOM 里，上述场景必须整表挂载。
 	 */
 	navBlockingVirtualization: boolean;
+	/** 当前钉住行的 messageId（浏览态）；无钉行时为 null。读 ref，不触发渲染。 */
+	readPinnedMessageId: () => string | null;
 	/** 跳转在途：贴底跟随的窗口压缩要让位，否则流式期间目标轮挂不上。 */
 	jumpPending: boolean;
 	/** 顶部插入收尾：渲染层做完 pin 补偿后调用，解除整表渲染。 */
@@ -1007,6 +1009,12 @@ export function useSessionTimelineController(options: { sessionId?: string; mess
 	 *  跳转按目标轮次一次排满批次（estimateJumpExpandTurns）分帧挂载，不卡单帧，
 	 *  批次消费完前 pendingJump effect 挂起等待；「显示更早」按钮仍走原子 expandWindow（低频操作）。 */
 	const pendingExpandTurnsRef = useRef(0);
+	/** 这一提交里刚插入过扩窗行（一次性标记，读完即清）。
+	 *
+	 * 为什么不用 pendingExpandTurnsRef > 0 判断：consumeExpandBatch 第一行就把
+	 * expandBatchFrameRef 置空，最后一帧把 pending 减到 0 且不再排帧。等比补偿跑到
+	 * pinBrowseRow 时两个条件都是假 —— **恰是最该补的那一帧**被判成「没在扩窗」。 */
+	const expandInsertedRef = useRef(false);
 	const expandBatchFrameRef = useRef<number | undefined>(undefined);
 	const consumeExpandBatch = useCallback(() => {
 		expandBatchFrameRef.current = undefined;
@@ -1016,8 +1024,11 @@ export function useSessionTimelineController(options: { sessionId?: string; mess
 		// （回底后按钮反复出现、滚到底跟着就掉开的根因之一）。
 		if (autoScrollRef.current && !pendingJumpRef.current) {
 			pendingExpandTurnsRef.current = 0;
-			// 批次被作废也要收掉整表渲染，否则它只能干等 1.5s 兜底超时。
-			endPrependSolid();
+			// 不再在这里收整表渲染：扩窗不再打开它（begin 只在 loadMoreMessages 的
+			// needsSolid 分支里）。这里若调 end，会 ++token 排一帧 setPrependSolid(false)，
+			// 把 scroll 路径刚打开、还在等锚点消费的整表渲染提前撤掉 —— 与 651701300 修的是
+			// 同一个形状，只是主角换成了扩窗。回底作废批次的收口由锚点消费点承担：
+			// autoScroll 为真时 useLayoutEffect 会走「跟底中」分支并 end。
 			return;
 		}
 		// 待扩量远超单帧预算：每条补页都会排一批，补到很早的历史可累计上百轮。
@@ -1029,18 +1040,19 @@ export function useSessionTimelineController(options: { sessionId?: string; mess
 		pendingExpandTurnsRef.current -= batch;
 		// 轮数上限 = 已加载消息数：到顶就不再涨（封顶与不缩回的取舍见 windowExpandPlan）。
 		const windowCap = Math.max(loadedMessageCountRef.current, TIMELINE_SCROLLED_TURN_LIMIT);
+		// 一次性标记：pinBrowseRow 读到后立刻清，同一帧只补一次。
+		expandInsertedRef.current = true;
 		setScrolledWindowTurns((prev) => capWindowTurns(prev, batch, windowCap));
 		if (pendingExpandTurnsRef.current > 0) {
 			// 还有剩余：下一帧继续消费，摊平布局/渲染压力
 			expandBatchFrameRef.current = window.requestAnimationFrame(consumeExpandBatch);
 		} else {
-			// **整批消费完才关整表渲染**：中间各帧的 pin 补偿都在整表渲染下做。
-			// 关早了（挂在「每帧 turns 变化」上）会让最后一批插入的行被虚拟化卸载、pin 找不到钉住的行；
-			// 关晚了（只靠 1.5s 兜底）会让整表渲染拖长、每插一批重排一次。
-			// endPrependSolid 内部会再推一帧，等这批 setScrolledWindowTurns 的布局落地后再交回虚拟化。
-			endPrependSolid();
+			// 不再在这里收整表渲染：扩窗全程不再打开它。钉住的行由 rangeExtractor
+			// 强制挂载（VirtualRunList 的 pinnedRunKeys），不需要整表真实渲染就能查到行。
 		}
-	}, [endPrependSolid]);
+		// 函数体已不再用 endPrependSolid：留着依赖会让它一变就重建 consumeExpandBatch，
+		// 进而重建 expandWindowBatched 和一串下游 useCallback。
+	}, []);
 	/**
 	 * 结束当前历史浏览事务。回底按钮和手动下滚重锁共用这条同步路径，确保
 	 * 在 React effect 前便作废迟到分页、锚点、扩窗 rAF 与待处理的上滚意图。
@@ -1096,13 +1108,14 @@ export function useSessionTimelineController(options: { sessionId?: string; mess
 			}
 			if (turns <= 0) return;
 			pendingExpandTurnsRef.current += turns;
-			// 顶部插入要来了：期间整表真实渲染，否则插入后 pin 的行已被虚拟化卸载、补不了位移。
-			beginPrependSolid();
+			// 不再打开整表渲染：钉住的行由 VirtualRunList 的 pinnedRunKeys + rangeExtractor
+			// 强制挂载，插入后那一行仍在 DOM 里，pinBrowseRow 查得到。原来这里 begin 是
+			// 「为了能查到行」，代价是扩窗期间全部已加载轮次真实挂载（用户 137 轮时必然掉帧）。
 			if (expandBatchFrameRef.current === undefined) {
 				expandBatchFrameRef.current = window.requestAnimationFrame(consumeExpandBatch);
 			}
 		},
-		[beginPrependSolid, consumeExpandBatch, escapeAutoScroll],
+		[consumeExpandBatch, escapeAutoScroll],
 	);
 	// 单栏无 key 复用：切会话时取消上一会话未完成的扩窗任务。窗口值本身由
 	// restoreAnchor 的快照在 render 阶段初始化，不能在此处无条件重置为 3 轮。
@@ -1291,6 +1304,15 @@ export function useSessionTimelineController(options: { sessionId?: string; mess
 	 * 必须走 restoreAt。人手滚动不走这里（只更新 expected，见 handleTimelineScroll）。
 	 */
 	const pinBrowseRow = useCallback(() => {
+		// 消费式读取放在最前面：本函数任何一条出口都算结算了这一帧的插入标记。
+		// 标记由 consumeExpandBatch 每帧置 true（只要有 pending），所以这里清掉不会
+		// 永久丢信号 —— 下一帧还在扩窗就会重新置上。
+		// 清在出口之外是必须的：只清某几条分支，正常路径（扩窗帧最常见）和
+		// skip/autoScroll 提前 return 都会把 true 留到下一帧，那一帧若因 Markdown 异步
+		// 长高把钉行挤出虚拟区，就会把「内容自己长高」误判成「正在扩窗插入」并补一次。
+		// 贴底（autoScroll）与 skip 本来就不该补偿，清标记正是结算这件事的写法。
+		const expanding = expandInsertedRef.current;
+		expandInsertedRef.current = false;
 		if (skipBrowsePinRef.current || autoScrollRef.current || sendScrollRef.current.isAnimating) return;
 		const pin = browsePinRef.current;
 		const timeline = timelineRef.current;
@@ -1302,7 +1324,7 @@ export function useSessionTimelineController(options: { sessionId?: string; mess
 		// 时返回 false（browsePin.ts:shouldCompensateBrowsePin），放在后面就是死代码。
 		if (currentTop === null) {
 			const delta = resolvePinnedRowFallback({
-				expanding: pendingExpandTurnsRef.current > 0 || expandBatchFrameRef.current !== undefined,
+				expanding,
 				previousHeight: pinFallbackHeightRef.current,
 				nextHeight,
 				viewportHeight: timeline.clientHeight,
@@ -2194,6 +2216,10 @@ export function useSessionTimelineController(options: { sessionId?: string; mess
 		windowExpandableRef,
 		isSurfaceLoading,
 		navBlockingVirtualization: restorePhase !== "complete" || pendingJump !== undefined || prependSolid,
+		/** 当前钉住的行（浏览态）。渲染层用它把所在 run 交给 VirtualRunList 的
+		 *  pinnedRunKeys，让 rangeExtractor 强制挂载 —— 扩窗/翻页在顶部插入后这一行会
+		 *  被推出 overscan，查不到就补不了位移。读 ref，不触发渲染。 */
+		readPinnedMessageId: () => browsePinRef.current?.messageId ?? null,
 		/** 顶部插入（扩窗/翻页）收尾通知：渲染层的 pin 补偿做完后调用，解除整表渲染。 */
 		/** 跳转在途：渲染层据此暂停贴底窗口压缩（流式期间点刻度时目标轮必须能挂上）。 */
 		jumpPending: pendingJump !== undefined,

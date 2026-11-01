@@ -101,3 +101,34 @@ export function isRenderableRunItem(item: RenderableTimelineItem): boolean {
 	if (isRetryStatusMessage(message as ChatMessage)) return false;
 	return true;
 }
+
+/**
+ * 把「必须挂载的行」并进虚拟器的可见范围。
+ *
+ * 为什么需要：扩窗/翻页在顶部插入轮次时，controller 要按 [data-message-id] 查 DOM
+ * 把钉住的行拉回原位。插入后那一行会被推出 overscan，虚拟区不渲染它 -> 查不到 ->
+ * 补偿落空 -> 视口掉位。整表渲染能解决，代价是全部已加载轮次真实挂载（137 轮必掉帧）。
+ * 这里只多挂那一行。
+ *
+ * 库要求返回**升序去重**的数组。这里保证三件事：升序、无重复、每个下标都合法。
+ * 引用优化是做不到的——调用方传进来的 base 来自 defaultRangeExtractor，每次都是新数组，
+ * tanstack 也不按引用判缓存（calculateRange 由 scrollOffset / count 驱动）。别写这种承诺。
+ *
+ * limit 是行数上限（count）：越界下标一旦进 rangeExtractor，tanstack 会按它去取
+ * virtualEntries[undefined] 渲染空行。调用方本来就只从合法范围里取，但纯函数不该依赖
+ * 调用方自律 —— 换个调用方就是一次越界。
+ */
+export function mergePinnedRange(base: readonly number[], pinned: readonly number[], limit?: number): readonly number[] {
+	if (pinned.length === 0) return base;
+	let merged: number[] | undefined;
+	for (const index of pinned) {
+		if (!Number.isInteger(index) || index < 0) continue;
+		if (limit !== undefined && index >= limit) continue;
+		const source = merged ?? base;
+		if (source.includes(index)) continue;
+		merged = [...source, index];
+	}
+	if (!merged) return base;
+	merged.sort((a, b) => a - b);
+	return merged;
+}

@@ -273,7 +273,7 @@ test("prepend solid close is owned by batch consumption, not by the window layou
 	assert.ok(layoutEffect, "找不到扩窗布局效应的源码块");
 	assert.doesNotMatch(layoutEffect[0], /endPrependSolid/, "关闭整表渲染不得挂回每帧布局效应");
 	assert.match(layoutEffect[0], /pinBrowseRow\(\)/, "补位移仍必须留在这一拍");
-	assert.match(source, /\} else \{[\s\S]{0,420}?endPrependSolid\(\);/, "批次归零分支必须关闭整表渲染");
+	assert.doesNotMatch(source, /\} else \{[\s\S]{0,420}?endPrependSolid\(\);/, "批次归零分支不得关闭整表渲染：扩窗不再打开它，这里关一次就会撤掉 scroll 路径正在等的整表渲染");
 });
 
 test("top-anchored prepend skips compensation but must still end prepend solid", () => {
@@ -293,7 +293,7 @@ test("a page load that never commits must end prepend solid in finally", () => {
 	// 没插入就不跑、也就没人 end —— 整表渲染只能等 1.5s 兜底，超时那刻虚拟化接管、
 	// 行高从实测回退估算、总高度突变 -> 重排 -> 视口抖。点几次就种几次跳。
 	const opens = source.match(/beginPrependSolid\(\);/g) ?? [];
-	assert.equal(opens.length, 3, "三处 begin：扩窗一处、分页两条 promise 链各一处（都在确认要发请求之后，早退发生在 begin 之前）");
+	assert.equal(opens.length, 2, "只剩两处 begin：分页两条 promise 链各一处；扩窗那处已移除（改由 pinnedRunKeys 强制挂载钉行）");
 	const finallyBlocks = source.match(/\.finally\(\(\) => \{[\s\S]*?if \(needsSolid && !insertionCommitted\) endPrependSolid\(\);/g) ?? [];
 	assert.equal(finallyBlocks.length, 2, "两条 promise 链各一个 finally");
 	for (const block of finallyBlocks) {
@@ -308,7 +308,7 @@ test("button 翻页不关闭虚拟化：只有 scroll 路径才开整表渲染",
 	// button / backfill 走 scrollHeight 差值补偿，不查 DOM。
 	assert.match(source, /const needsSolid = source === "scroll";/, "开关必须只由 source 决定");
 	const unguarded = source.match(/^\t+beginPrependSolid\(\);$/gm) ?? [];
-	assert.equal(unguarded.length, 1, "只允许扩窗路径无条件 begin；翻页两条 promise 链必须条件化");
+	assert.equal(unguarded.length, 0, "不允许任何无条件 begin：begin 的唯一来源是 needsSolid 分支，否则摘不掉扩窗期的整表渲染");
 	assert.equal((source.match(/if \(needsSolid && !insertionCommitted\) endPrependSolid\(\);/g) ?? []).length, 2, "finally 的 end 也必须带条件");
 	assert.doesNotMatch(source, /if \(!insertionCommitted\) endPrependSolid\(\);/, "不带条件的 end 会关掉别处开的整表渲染");
 });
@@ -317,7 +317,7 @@ test("没打开整表渲染的翻页不得调用 endPrependSolid", () => {
 	// end 会 ++token 并排一帧 setPrependSolid(false)。button 路径不开整表渲染，
 	// 若消费点仍无条件 end，就会把扩窗路径刚打开、还在消费中的整表渲染关掉。
 	const bare = source.match(/^\t+endPrependSolid\(\);$/gm) ?? [];
-	assert.equal(bare.length, 2, "只允许 consumeExpandBatch 里两处无条件 end（扩窗路径自己 begin 自己 end）");
+	assert.equal(bare.length, 0, "不允许任何无条件 end：扩窗已不 begin，再 end 就是替别人关灯（与 651701300 同一形状）");
 	assert.equal((source.match(/if \(anchor\.value\.solidOpened\) endPrependSolid\(\);/g) ?? []).length, 4, "四处消费点都必须带 solidOpened 条件");
 	assert.match(source, /solidOpened: source === "scroll",/, "锚点必须记录这次是否开过整表渲染");
 });
