@@ -33,7 +33,8 @@ export function ProviderLoginModal() {
 }
 
 /** 阶段内容区：固定最小高度避免弹框抖动，超高走内部滚动（不放宽弹框本身）。 */
-const PHASE_BODY_CLASS = "min-h-56 max-h-[60vh] overflow-y-auto pr-1";
+// 阶段内容区的类名直接写在下方的容器行上（不抽常量）：scrollContainerGuard 只认元素行里
+// 的 overflow-* 字面量，抽成变量会让这个真实滚动窗从判定面里整条消失。
 
 function ProviderLoginBody({ preselectedProviderId }: { preselectedProviderId?: string }) {
 	const close = useSetAtom(closeProviderLoginAtom);
@@ -54,7 +55,8 @@ function ProviderLoginBody({ preselectedProviderId }: { preselectedProviderId?: 
 					<DialogTitle>{t("providerLogin.title")}</DialogTitle>
 					<DialogDescription>{state.phase === "running" ? t("providerLogin.running.title", { provider: state.providerId }) : t("providerLogin.subtitle")}</DialogDescription>
 				</DialogHeader>
-				<div className={PHASE_BODY_CLASS}>
+				{/* scroll-ok: transient —— 登录阶段内容区（loading / 表单 / 二维码轮换），随弹窗生命周期结束。 */}
+				<div className="min-h-56 max-h-[60vh] overflow-y-auto pr-1">
 					{state.phase === "loading" && (
 						<div className="flex h-40 items-center justify-center gap-2 text-sm text-muted-foreground">
 							<Loader2 className="size-4 animate-pideck-spin" />
