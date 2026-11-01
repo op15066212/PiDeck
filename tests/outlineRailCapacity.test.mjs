@@ -10,13 +10,13 @@ import { RAIL_TICK_LIMIT, RAIL_TICK_MIN_SIZE, railBuckets, railCapacity } from "
 test("容量 = 可用高度 / 最小间距，且不低于 30", () => {
 	assert.equal(railCapacity(700), Math.floor(700 / RAIL_TICK_MIN_SIZE));
 	assert.equal(railCapacity(700) >= RAIL_TICK_LIMIT, true);
-	assert.equal(railCapacity(120), RAIL_TICK_LIMIT);
+	assert.equal(railCapacity(120), Math.floor(120 / RAIL_TICK_MIN_SIZE));
 	assert.equal(railCapacity(0), RAIL_TICK_LIMIT);
 });
 
-test("85 条提问在 700px 里一条一根，不合并", () => {
+test("85 条提问在 1100px 里一条一根，不合并", () => {
 	const items = Array.from({ length: 85 }, (_, index) => ({ id: "m" + index }));
-	const capacity = railCapacity(700);
+	const capacity = railCapacity(1100);
 	assert.equal(capacity >= 85, true);
 	assert.deepEqual(railBuckets(items, capacity), items);
 });

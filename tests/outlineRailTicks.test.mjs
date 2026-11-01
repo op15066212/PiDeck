@@ -44,13 +44,13 @@ test("放不下就按条数收缩，间距 = floor(可用高度 / 条数)", () =
 	assert.ok(plan.items.length * plan.itemSize <= 380);
 });
 
-test("再挤也不低于可点击下限（30 条 × 6px = 180px 覆盖极小窗口）", () => {
-	assert.equal(railTicks.RAIL_TICK_MIN_SIZE, 6);
-	// 30 条只给 120px → fitted=4，钳到下限 6
+test("再挤也不低于可点击下限（12px 间距是密度目标，不是能塞多密的极限）", () => {
+	assert.equal(railTicks.RAIL_TICK_MIN_SIZE, 12);
+	// 30 条只给 120px → fitted=4，钳到下限 12
 	const plan = railTicks.planRailTicks(makeItems(30), 120);
-	assert.equal(plan.itemSize, 6);
-	// 小窗 + 终端坞（消息列约 194px）仍能一次放下 30 条
-	assert.ok(railTicks.RAIL_TICK_LIMIT * railTicks.RAIL_TICK_MIN_SIZE <= 194);
+	assert.equal(plan.itemSize, 12);
+	// 小窗 + 终端坞（消息列约 194px）：容量也按高度算，刻度总高不再溢出容器
+	assert.ok(railTicks.railCapacity(194) * railTicks.RAIL_TICK_MIN_SIZE <= 194);
 });
 
 test("条数不超上限：一根一条（短会话完全不受分段影响）", () => {
@@ -99,12 +99,14 @@ test("分段的选取与阅读位置无关（只收 items，不再按 activeInde
 	assert.deepEqual(idsOf(railTicks.railBuckets(items)), idsOf(railTicks.railBuckets(items)));
 });
 
-test("分段后仍需规划间距：30 段 × 6px = 180px 覆盖极小窗口", () => {
-	const buckets = railTicks.railBuckets(makeItems(200));
-	assert.equal(buckets.length, 30);
+test("分段后仍需规划间距：段数由可用高度决定，刻度总高不溢出容器", () => {
+	// 段数不再固定 30：30 x 12px = 360px 会把 194px 的小窗撑出容器（用户报的「长度快溢出」）。
+	const capacity = railTicks.railCapacity(194);
+	const buckets = railTicks.railBuckets(makeItems(200), capacity);
+	assert.equal(buckets.length, capacity);
 	assert.ok(buckets.length * railTicks.RAIL_TICK_MIN_SIZE <= 194);
 	const plan = railTicks.planRailTicks(buckets, 194);
-	assert.equal(plan.items.length, 30);
+	assert.equal(plan.items.length, capacity);
 	assert.ok(plan.items.length * plan.itemSize <= 194);
 });
 

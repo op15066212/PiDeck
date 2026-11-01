@@ -1457,7 +1457,6 @@ export function useSessionTimelineController(options: { sessionId?: string; mess
 			if (source === "button") escapeAutoScroll();
 			if (source !== "backfill") captureBrowsePin(true);
 			// 同上：翻页会在顶部插入，期间必须能按行测到 pin（整表渲染）。
-			beginPrependSolid();
 			if (timeline && ownerKeyRef.current === requestOwnerKey) {
 				loadMoreAnchorRef.current = {
 					ownerKey: requestOwnerKey,
@@ -1477,6 +1476,10 @@ export function useSessionTimelineController(options: { sessionId?: string; mess
 				const sequence = ++nextLoadSequence;
 				trackLatestLoad(sessionId, sequence);
 				const expectedRevision = cachedEntry?.revision ?? 0;
+				// 只在这里开整表渲染：上面的早退（无 sessionId / 无 before / 正在加载）
+				// 发生在 begin 之前，不需要配对的 end —— 出口与入口相邻，漏一次也不会漏第二次。
+				beginPrependSolid();
+				let insertionCommitted = false;
 				setIsLoadingMessagePage(true);
 				// 重试时先清掉上一次的错误行
 				setLoadMoreError(null);
@@ -1491,6 +1494,7 @@ export function useSessionTimelineController(options: { sessionId?: string; mess
 							return;
 						}
 						if (prependMessagePage({ sessionId, before, expectedRevision, page })) {
+							insertionCommitted = true;
 							// 历史消息页最多只开放一个 3 轮 cohort；数据页可能按消息数返回很多轮，
 							// 不能再固定 +10 把 DOM 一次性解锁，剩余已加载数据交给本地扩窗。
 							// 回底/切会话后到达（跟随或代数过期）只写缓存，不得扩窗——否则
@@ -1521,6 +1525,10 @@ export function useSessionTimelineController(options: { sessionId?: string; mess
 					})
 					.finally(() => {
 						if (latestLoadBySession.get(sessionId) === sequence) setIsLoadingMessagePage(false);
+						// 插入没落地（早退 / 失败 / 空页 / prepend 被拒）：useLayoutEffect 依赖 visibleMessages.length，
+						// 没插入就不跑，也就没人关整表渲染 —— 它只能等 1.5s 兜底，超时那刻虚拟化接管、
+						// 未挂载行从实测高度回退估算、总高度突变 -> 重排 -> 抖。点几次就种几次跳。
+						if (!insertionCommitted) endPrependSolid();
 					});
 				return;
 			}
@@ -1544,6 +1552,10 @@ export function useSessionTimelineController(options: { sessionId?: string; mess
 				const sequence = ++nextLoadSequence;
 				trackLatestLoad(sessionId, sequence);
 				const expectedRevision = cachedEntry?.revision ?? 0;
+				// 只在这里开整表渲染：上面的早退（无 sessionId / 无 before / 正在加载）
+				// 发生在 begin 之前，不需要配对的 end —— 出口与入口相邻，漏一次也不会漏第二次。
+				beginPrependSolid();
+				let insertionCommitted = false;
 				setIsLoadingMessagePage(true);
 				// 重试时先清掉上一次的错误行
 				setLoadMoreError(null);
@@ -1559,6 +1571,7 @@ export function useSessionTimelineController(options: { sessionId?: string; mess
 							return;
 						}
 						if (prependHistoryPage({ sessionId, expectedRevision, before, page })) {
+							insertionCommitted = true;
 							// runtime history 页与 DOM 使用同一 3 轮 cohort；缓存命中和文件回退
 							// 都只开放实际带回的轮数，避免数据 +3、窗口却 +10。
 							// 回底/切会话后到达（跟随或代数过期）只写缓存，不得扩窗。
@@ -1588,6 +1601,10 @@ export function useSessionTimelineController(options: { sessionId?: string; mess
 					})
 					.finally(() => {
 						if (latestLoadBySession.get(sessionId) === sequence) setIsLoadingMessagePage(false);
+						// 插入没落地（早退 / 失败 / 空页 / prepend 被拒）：useLayoutEffect 依赖 visibleMessages.length，
+						// 没插入就不跑，也就没人关整表渲染 —— 它只能等 1.5s 兜底，超时那刻虚拟化接管、
+						// 未挂载行从实测高度回退估算、总高度突变 -> 重排 -> 抖。点几次就种几次跳。
+						if (!insertionCommitted) endPrependSolid();
 					});
 				return;
 			}

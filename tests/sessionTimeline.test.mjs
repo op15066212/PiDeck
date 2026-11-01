@@ -287,3 +287,17 @@ test("top-anchored prepend skips compensation but must still end prepend solid",
 	assert.match(nullBranch[0], /endPrependSolid\(\)/, "贴顶分支消费完锚点后必须结束整表渲染");
 	assert.doesNotMatch(nullBranch[0], /pinViewportAfterPrepend/, "贴顶分支不得补偿，否则画面停在原地像点了没反应");
 });
+
+test("a page load that never commits must end prepend solid in finally", () => {
+	// 失败/空页/被拒/prepend 未落地：useLayoutEffect 依赖 visibleMessages.length，
+	// 没插入就不跑、也就没人 end —— 整表渲染只能等 1.5s 兜底，超时那刻虚拟化接管、
+	// 行高从实测回退估算、总高度突变 -> 重排 -> 视口抖。点几次就种几次跳。
+	const opens = source.match(/beginPrependSolid\(\);/g) ?? [];
+	assert.equal(opens.length, 3, "三处 begin：扩窗一处、分页两条 promise 链各一处（都在确认要发请求之后，早退发生在 begin 之前）");
+	const finallyBlocks = source.match(/\.finally\(\(\) => \{[\s\S]*?if \(!insertionCommitted\) endPrependSolid\(\);/g) ?? [];
+	assert.equal(finallyBlocks.length, 2, "两条 promise 链各一个 finally");
+	for (const block of finallyBlocks) {
+		assert.match(block, /if \(!insertionCommitted\) endPrependSolid\(\);/, "没落地的请求必须在 finally 自己关整表渲染");
+	}
+	assert.equal((source.match(/insertionCommitted = true;/g) ?? []).length, 2, "只有真的 prepend 成功才算落地");
+});
