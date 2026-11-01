@@ -95,6 +95,7 @@ let previewSettings: AppSettings = {
 	showNativeMenu: false,
 	sendShortcut: "enter-send",
 	defaultAgentBackend: "pi",
+	agentMemoryEnabled: false,
 	floatingBallShowRunningBadge: true,
 	theme: "system",
 	themeScheduleLightStart: "07:00",

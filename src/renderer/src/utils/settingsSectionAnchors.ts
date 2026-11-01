@@ -30,6 +30,7 @@ export const SETTINGS_SECTION_ANCHORS = [
 	{ tab: "common", slug: "common-floating-ball", labelKey: "settings.floatingBallSection", keywords: ["悬浮球", "桌面悬浮", "floating ball"] },
 	{ tab: "common", slug: "common-cua", labelKey: "settings.cuaSection", keywords: ["cua", "桌面操作", "电脑操作", "自动操作", "computer use"] },
 	{ tab: "common", slug: "common-browser-agent", labelKey: "settings.browserAgentSection", keywords: ["浏览器 agent", "浏览器操作", "内置浏览器操作", "网页操作", "browser agent", "browser automation"] },
+	{ tab: "common", slug: "common-agent-memory", labelKey: "settings.agentMemorySection", keywords: ["智能体记忆", "长期记忆", "agent memory", "memory", "session_search", "跨后端记忆"] },
 	{ tab: "common", slug: "common-shell-integration", labelKey: "settings.shellContextMenuSection", keywords: ["右键菜单", "资源管理器", "文件夹右键", "context menu", "explorer"] },
 	{ tab: "common", slug: "common-window", labelKey: "settings.sectionWindow", keywords: ["窗口", "托盘", "关闭行为", "window", "tray"] },
 	{ tab: "common", slug: "common-prompt-enhance", labelKey: "settings.enhance.section", keywords: ["提示词增强", "提示词优化", "prompt 增强", "enhance"] },

@@ -21,7 +21,7 @@ import type { ChatMessage, SendPromptInput, SendPromptResult, SessionUiResponseI
 import type { PiCommand } from "../../shared/types/app";
 import type { SessionAgentGateway } from "../sessions/SessionRuntimeCoordinator";
 import type { PiLocator } from "../pi/PiLocator";
-import { ACP_PROTOCOL_VERSION, type AcpConfigOption, type AcpContentBlock, type AcpRpcNotification, type AcpSessionPromptResult, type AcpStopReason } from "./acpProtocol";
+import { ACP_PROTOCOL_VERSION, type AcpConfigOption, type AcpContentBlock, type AcpMcpServer, type AcpRpcNotification, type AcpSessionPromptResult, type AcpStopReason } from "./acpProtocol";
 import { AcpTimeoutError } from "./AcpConnection";
 import { AcpPermissionRequests } from "./AcpPermissionRequests";
 import { acpPromptBlocks, appendAcpUserPrompt, initialAcpProjection, rollbackAcpUserPrompt, settleAcpTurn, upsertAcpRetryStatus, type AcpProjectionState } from "./AcpEventProjector";
@@ -52,6 +52,13 @@ const RESPAWN_HANDSHAKE_TIMEOUT_MS = 20_000;
 type AcpManagerDeps = {
 	/** 解析命令启动形态(Windows .cmd 垫片还原、node 直启等)。 */
 	piLocator: PiLocator;
+	/**
+	 * 会话级 MCP 服务器（`session/new` / `session/load` 的 mcpServers）。
+	 * PiDeck 用它把 `pideck-agent-memory` 挂给外部 CLI，让 ACP 会话拥有与 pi 同一套记忆工具。
+	 * 参数是会话 cwd：项目记忆按路径派生键落盘，三种后端因此共享同一份项目记忆。
+	 * 缺省不给工具，保持引入前行为。
+	 */
+	mcpServers?: (cwd: string) => AcpMcpServer[];
 	getProject: (id: string) => { path: string } | undefined;
 	/** 读取用户登记的 ACP 工具表(settings.acpTools)。 */
 	getTools: () => AcpToolConfig[];
@@ -548,6 +555,7 @@ export class AcpAgentManager implements SessionAgentGateway {
 		await performAcpHandshake(runtime, acpSessionId, runtime.tab.cwd, spawnFailure, {
 			handshakeTimeoutMs: handshakeTimeoutMs ?? this.deps.handshakeTimeoutMs,
 			logger: this.deps.logger,
+			mcpServers: this.deps.mcpServers,
 			seedMessages: (sessionId) => this.messageSnapshots.get(sessionId) ?? [],
 			onNotification: (rt, notification) => {
 				// 有过任何通知 = agent 已经开始干活：断线后重开会重跑工具，不再自动重连。

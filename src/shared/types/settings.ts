@@ -571,6 +571,15 @@ export type AppSettings = {
 	 */
 	browserAgentAutoApprove: boolean;
 
+	// ── 智能体记忆：跨后端（pi / DSH / ACP）共享的长期记忆 ──
+	/**
+	 * 是否启用智能体记忆，默认 false。
+	 * 开启后启动时把 `pideck-agent-memory`（本地 stdio MCP 服务器）写进
+	 * ~/.pi/agent/mcp.json，并作为 mcpServers 挂给 ACP 会话；关闭时只删自己那一项，
+	 * 不改动用户在 mcp.json 里的其它服务器。记忆文件在 <userData>/agent-memory/，关掉不删除。
+	 */
+	agentMemoryEnabled: boolean;
+
 	// ── 模型收藏：ModelPicker 中用 ☆ 标记，收藏的模型在列表中置顶 ──
 	/** 收藏的模型 ID 列表 */
 	favoriteModels: string[];
@@ -1268,6 +1277,8 @@ export function createDefaultAppSettings(): AppSettings {
 		// 浏览器 Agent 默认关闭；开启后写动作默认免审批（与 CUA 一致），可关闭改为逐次确认。
 		browserAgentEnabled: false,
 		browserAgentAutoApprove: true,
+		// 智能体记忆默认关闭：关闭时不注册、不改动 pi 的 mcp.json，与引入前完全一致
+		agentMemoryEnabled: false,
 		favoriteModels: [],
 
 		// 字体配置：与 main SettingsStore 默认值保持一致，避免启动时闪烁

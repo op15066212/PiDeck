@@ -2,7 +2,7 @@
  * 本文件由 `node scripts/genZhTwCopy.mjs` 生成，请勿手改。
  * 文案改动请修改对应的 zh-CN 源文件后重新生成；转换规则见该脚本的 OVERRIDES。
  * 注释刻意保留简体：属于开发者视角文本，不面向用户。
- * source-sha256: 93401947057d5e100ca50bf4f27ec24619b94eaf07b64cf4a5428138d00e2d92（来自 src/renderer/src/i18n/rendererCopy.zh-CN.ts 的词典区块指纹，由 tests/zhTwCopy.test.mjs 校验新鲜度）
+ * source-sha256: f17a39dd5220160e27220cdd393e35d67f392d5f099f75b6b3229ce15bd16a76（来自 src/renderer/src/i18n/rendererCopy.zh-CN.ts 的词典区块指纹，由 tests/zhTwCopy.test.mjs 校验新鲜度）
  */
 import { mainProcessZhTW } from "../../../shared/i18n/mainProcessCopy.zh-TW";
 import type { TranslationKey } from "./rendererCopy.zh-CN";
@@ -5502,6 +5502,10 @@ export const zhTW: Record<TranslationKey, string> = {
 	"settings.floatingBallExpandMini": "極簡浮窗",
 	"settings.floatingBallExpandCompact": "小任務模式",
 	"settings.cuaSectionDesc": "允許 Agent 觀察螢幕並注入滑鼠/鍵盤輸入，從而操作桌面原生應用。CUA 預設關閉，自動審批預設開啟；可關閉自動審批以逐次確認寫操作。",
+	"settings.agentMemorySection": "智慧體記憶",
+	"settings.agentMemorySectionDesc": "跨 pi / DSH / ACP 共享的長期記憶。Markdown 檔案是真值（使用者資料目錄下的 agent-memory），檢索走本地全文索引。開啟後 PiDeck 把 pideck-agent-memory 寫進 pi 的 mcp.json，並掛給 ACP 會話；關閉只刪這一項，不改動你的其它伺服器配置。",
+	"settings.agentMemoryEnabled": "啟用智慧體記憶",
+	"settings.agentMemoryEnabledDesc": "開啟後 Agent 才能用 memory_add / memory_replace / memory_remove / memory_search / memory_get / session_search / memory_status。只對新會話生效；關閉不會刪除已儲存的記憶檔案。",
 	"settings.cuaEnabled": "啟用 CUA 桌面操作",
 	"settings.cuaEnabledDesc": "開啟後在本地起一個僅迴環可達的 MCP 端點並註冊給 Pi；關閉時不監聽、不改動 Pi 配置。真實輸入始終受全域/會話殺開關保護，關閉自動審批後每次寫操作需確認。",
 	"settings.cuaAutoApprove": "CUA 免審批（自動放行）",

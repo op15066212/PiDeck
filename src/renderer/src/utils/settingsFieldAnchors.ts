@@ -339,6 +339,12 @@ const SETTINGS_ROW_ANCHORS = [
 	},
 	{
 		tab: "common",
+		slug: "common-agent-memory-enabled",
+		labelKey: "settings.agentMemoryEnabled",
+		keywords: ["智能体记忆", "长期记忆", "memory", "agent memory", "跨后端记忆", "session_search"],
+	},
+	{
+		tab: "common",
 		slug: "common-cua-enabled",
 		labelKey: "settings.cuaEnabled",
 		keywords: ["cua", "桌面操作", "电脑操作", "模拟点击", "desktop automation"],

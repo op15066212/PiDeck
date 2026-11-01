@@ -319,6 +319,8 @@ import { PiModelCapabilityCache, watchPiConfigDirectory } from "./pi/PiModelCapa
 import { isDefaultAgentTitle } from "./pi/agentUtils";
 import { CompositeAgentGateway } from "./agents/CompositeAgentGateway";
 import { AcpAgentManager } from "./acp/AcpAgentManager";
+import { buildAcpMcpServers, buildAgentMemoryMountForApp } from "./agentMemory/agentMemoryMounts";
+import { syncAgentMemoryRegistration } from "./agentMemory/AgentMemoryMcpRegistration";
 import { AcpSessionArchive } from "./acp/AcpSessionArchive";
 import { createAcpModelRateAnnotator } from "./acp/acpModelRates";
 import { withAcpConfigDefault } from "./acp/acpToolConfig";
@@ -1539,6 +1541,25 @@ function resolveImageGenStorageRoots(): { sessions: string; blobs: string } {
  */
 function resolveSessionExportDir(): string {
 	return join(app.getPath("userData"), "exports");
+}
+
+/**
+ * Agent 记忆（pideck-agent-memory）的挂载描述。
+ *
+ * 记忆实现是 resources/agent-memory 下的 stdio MCP 服务器，由各后端子进程自己拉起：
+ * pi 走 ~/.pi/agent/mcp.json（pi 0.99 内置 MCP 只认这个文件），ACP 走 session/new 的 mcpServers。
+ * 传 cwd 时会话就带上项目作用域键，三种后端因此共享同一份项目记忆。
+ */
+function createAgentMemoryMount(cwd?: string) {
+	return buildAgentMemoryMountForApp({
+		userData: app.getPath("userData"),
+		home: app.getPath("home"),
+		execPath: process.execPath,
+		isPackaged: app.isPackaged,
+		appPath: app.getAppPath(),
+		resourcesPath: process.resourcesPath,
+		cwd,
+	});
 }
 
 /**
@@ -4986,6 +5007,12 @@ function registerIpc() {
 				browserAgentEnabled: next.browserAgentEnabled ?? false,
 			});
 		},
+		// 智能体记忆开关：开启即幂等注册、关闭只删自己那一项（与启动时同一套动作）。
+		reactToAgentMemorySettings: async (prev, next) => {
+			if (prev.agentMemoryEnabled === next.agentMemoryEnabled) return;
+			const synced = syncAgentMemoryRegistration({ enabled: next.agentMemoryEnabled, mount: createAgentMemoryMount() });
+			void appLogger?.info("memory", "agent memory MCP synced", { action: synced.action, path: synced.path });
+		},
 		applyNativeThemeSource,
 		refreshTrayContextMenu,
 		// 语言变更时按当前主进程 locale 重算，忽略 systemIpc 传入的占位参数
@@ -5236,6 +5263,8 @@ app
 		// 且没有跨 store rebind 事务在跑。门自己读 remote-hosts.json，不依赖主进程缓存；构造本身不做 I/O。
 		const remoteReferenceWriteGuard = createRemoteReferenceWriteGuard({ userDataDir: app.getPath("userData") });
 		projectStore = new ProjectStore(() => mainCopy("dialog.chooseProjectFolder"), { referenceGuard: remoteReferenceWriteGuard });
+		// Agent 记忆（pideck-agent-memory）：注册时机与 CUA 同一处——settingsStore 已就绪后再按开关决定，
+		// 避免「先无条件写用户 mcp.json，再等设置加载」这类顺序依赖。
 		fileSystemService = new FileSystemService();
 		sessionScanner = new SessionScanner(mainCopy);
 		codexSessionImporter = new CodexSessionImporter(mainCopy);
@@ -6992,6 +7021,9 @@ app
 		// 开启后每次 create 即 spawn 对应 CLI，无预热。
 		acpAgentManager = new AcpAgentManager({
 			piLocator,
+			// 每次 session/new 现算：项目键依赖会话 cwd，ACP CLI 因此获得与 pi 同一套记忆工具。
+			// 开关关闭时给空数组：ACP v1 该字段必填（opencode 缺它直接 -32602），但也别把工具挂给外部 CLI。
+			mcpServers: (cwd) => (settingsStore.get().agentMemoryEnabled ? buildAcpMcpServers(createAgentMemoryMount(cwd)) : []),
 			// ACP CLI 是本机进程：远端项目没有本机 cwd，明确不适用（与 ACP 无远端运行时一致）。
 			getProject: (projectId) => {
 				const project = projectStore.get(projectId);
@@ -7639,6 +7671,14 @@ app
 			.catch((error) => {
 				void appLogger.warn("cua", "CUA/browser agent service start failed", error);
 			});
+		// 智能体记忆：默认关闭。关闭时若上一次开过，把 mcp.json 里自己那一项删掉（别人的条目不动），
+		// 否则「关掉开关」在 pi 侧仍会拉起记忆工具。注册失败不阻断启动——记忆是增强项。
+		try {
+			const synced = syncAgentMemoryRegistration({ enabled: settingsStore.get().agentMemoryEnabled ?? false, mount: createAgentMemoryMount() });
+			void appLogger?.info("memory", "agent memory MCP synced", { action: synced.action, path: synced.path });
+		} catch (error) {
+			void appLogger?.warn("memory", "agent memory MCP registration failed", { error: error instanceof Error ? error.message : String(error) });
+		}
 		quitCleanup.register("cua", async () => {
 			// runAll 会逐项 await：返回 dispose 的 Promise 保证退出前 host 关闭 + mcp.json 反注册完成（早前 `void` 掉 Promise，退出竞态）。
 			await cuaService?.dispose();

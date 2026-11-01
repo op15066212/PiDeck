@@ -516,6 +516,12 @@ export const CommonTab = memo(function CommonTab(props: CommonTabProps) {
 				/>
 			</SettingsSection>
 
+			{/* 智能体记忆：默认关闭。开启后把 pideck-agent-memory 写进 pi 的 mcp.json 并挂给 ACP 会话，
+          让三种后端共用一份 Markdown 记忆（<userData>/agent-memory）与会话检索。 */}
+			<SettingsSection id="settings-section-common-agent-memory" title={t("settings.agentMemorySection")} description={t("settings.agentMemorySectionDesc")}>
+				<SettingSwitchRow anchor="common-agent-memory-enabled" title={t("settings.agentMemoryEnabled")} description={t("settings.agentMemoryEnabledDesc")} checked={draft.agentMemoryEnabled ?? false} dirty={isDirty("agentMemoryEnabled")} onChange={(checked) => updateDraft({ agentMemoryEnabled: checked })} />
+			</SettingsSection>
+
 			{/* 文件资源管理器集成：注册「用 PiDeck 打开」右键菜单（目录与空白处），
           HKCU 写入即时生效；非 Windows 平台开关置灰并提示。 */}
 			<SettingsSection id="settings-section-common-shell-integration" title={t("settings.shellContextMenuSection")} description={t("settings.shellContextMenuSectionDesc")}>
