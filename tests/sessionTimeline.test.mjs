@@ -260,3 +260,16 @@ test("prepend solid frame close is invalidated by token so a later begin survive
 	assert.match(source, /if \(prependSolidTokenRef\.current !== token\) return;/, "rAF 回调必须比对代数，过期即放弃关闭");
 	assert.match(source, /const beginPrependSolid = useCallback\(\(\) => \{\n\s*prependSolidTokenRef\.current \+= 1;/, "begin 必须递增代数以作废旧帧");
 });
+
+test("prepend solid close is owned by batch consumption, not by the window layout effect", () => {
+	// 关闭整表渲染只能挂在「整批消费完」上：若挂回 SessionMessageTimeline 的 useLayoutEffect
+	// （每帧 turns 变化就关），连点时每帧关一次 → 上一帧的关闭把新 start 的状态撤掉 →
+	// 状态机卡在 true 直到 1.5s 兜底，中间每次插入都是一次重排，视口照跳。
+	// 这类职责搬家，行为测试全绿也发现不了，只能用源码断言钉住边界。
+	const timelineSource = readFileSync("src/renderer/src/components/session/SessionMessageTimeline.tsx", "utf8");
+	const layoutEffect = timelineSource.match(/useLayoutEffect\(\(\) => \{[\s\S]*?prev\.turns !== turnWindowTurns[\s\S]*?\}, \[[^\]]*\]\);/);
+	assert.ok(layoutEffect, "找不到扩窗布局效应的源码块");
+	assert.doesNotMatch(layoutEffect[0], /endPrependSolid/, "关闭整表渲染不得挂回每帧布局效应");
+	assert.match(layoutEffect[0], /pinBrowseRow\(\)/, "补位移仍必须留在这一拍");
+	assert.match(source, /\} else \{[\s\S]{0,420}?endPrependSolid\(\);/, "批次归零分支必须关闭整表渲染");
+});

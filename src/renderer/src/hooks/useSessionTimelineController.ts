@@ -1016,6 +1016,8 @@ export function useSessionTimelineController(options: { sessionId?: string; mess
 		// （回底后按钮反复出现、滚到底跟着就掉开的根因之一）。
 		if (autoScrollRef.current && !pendingJumpRef.current) {
 			pendingExpandTurnsRef.current = 0;
+			// 批次被作废也要收掉整表渲染，否则它只能干等 1.5s 兜底超时。
+			endPrependSolid();
 			return;
 		}
 		// 待扩量远超单帧预算：每条补页都会排一批，补到很早的历史可累计上百轮。
@@ -1031,8 +1033,14 @@ export function useSessionTimelineController(options: { sessionId?: string; mess
 		if (pendingExpandTurnsRef.current > 0) {
 			// 还有剩余：下一帧继续消费，摊平布局/渲染压力
 			expandBatchFrameRef.current = window.requestAnimationFrame(consumeExpandBatch);
+		} else {
+			// **整批消费完才关整表渲染**：中间各帧的 pin 补偿都在整表渲染下做。
+			// 关早了（挂在「每帧 turns 变化」上）会让最后一批插入的行被虚拟化卸载、pin 找不到钉住的行；
+			// 关晚了（只靠 1.5s 兜底）会让整表渲染拖长、每插一批重排一次。
+			// endPrependSolid 内部会再推一帧，等这批 setScrolledWindowTurns 的布局落地后再交回虚拟化。
+			endPrependSolid();
 		}
-	}, []);
+	}, [endPrependSolid]);
 	/**
 	 * 结束当前历史浏览事务。回底按钮和手动下滚重锁共用这条同步路径，确保
 	 * 在 React effect 前便作废迟到分页、锚点、扩窗 rAF 与待处理的上滚意图。

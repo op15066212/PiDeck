@@ -629,20 +629,19 @@ export function SessionMessageTimeline(props: SessionMessageTimelineProps) {
 		turns: 0,
 	});
 	const pinBrowseRow = controller.pinBrowseRow;
-	const endPrependSolid = controller.endPrependSolid;
 	useLayoutEffect(() => {
 		const prev = turnWindowStateRef.current;
 		if (prev.windowed && prev.turns !== turnWindowTurns && !followingForTurnWindow) {
-			// 扩窗在顶部插入轮次：期间 controller 会保持整表渲染（navBlockingVirtualization），
-			// 这一拍按钉住的行补齐位移，然后把渲染方式交回虚拟化。
+			// 扩窗在顶部插入轮次：期间 controller 保持整表渲染（navBlockingVirtualization），
+			// 这一拍按钉住的行补齐位移。**关闭整表渲染不在这里**——它挂在「整批消费完」
+			// （controller 的 consumeExpandBatch），否则连点时每帧都关一次，状态机卡在 true。
 			pinBrowseRow();
-			endPrependSolid();
 		}
 		turnWindowStateRef.current = {
 			windowed: turnWindowActive,
 			turns: turnWindowTurns,
 		};
-	}, [displayRuns, endPrependSolid, followingForTurnWindow, pinBrowseRow, turnWindowActive, turnWindowTurns]);
+	}, [displayRuns, followingForTurnWindow, pinBrowseRow, turnWindowActive, turnWindowTurns]);
 	// 文件修改由 SessionView 提取最近一轮并放在 composer 上方；时间线只负责渲染消息。
 	// 时间线里已有用户图片才解析模型目录：原生看图时气泡不能显示视觉桥「转换中」。
 	const hasUserImages = useMemo(() => activeMessages.some((message) => message.role === "user" && Boolean(message.images?.length)), [activeMessages]);
