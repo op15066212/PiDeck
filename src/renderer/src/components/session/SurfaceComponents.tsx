@@ -103,7 +103,7 @@ import {
 } from "lucide-react";
 import { getFileIconSeti, getFileIconColor, getFileTypeLabel } from "../../fileIcons";
 import { normalizeSessionPathForCompare } from "../../agentListDisplay";
-import { t } from "../../i18n";
+import { getI18nLocale, t } from "../../i18n";
 import { cn } from "../../lib/utils";
 import { showNotice } from "../../utils/notice";
 import { desktopApi } from "../../desktopApi";
@@ -1433,7 +1433,10 @@ function ConversationOutlineView(props: ConversationOutlineProps) {
 				muted: item.pending === true,
 			})),
 		],
-		[plan.items, windowStart],
+		// getI18nLocale() 进依赖：t() 读模块级 locale 且不订阅变化，切语言后
+		// windowStart 不变，不写进依赖就会让「更早 · 前 N 条」停在旧语言
+		// （同文件 directoryRailItems 已是这个写法，这里曾经漏了）。
+		[plan.items, windowStart, getI18nLocale()],
 	);
 	// 间距必须按**实际渲染条数**算，不能直接用 plan.itemSize：planRailTicks 的分母是
 	// visibleItems.length，而 PreviewRail 的导轨总高 = items.length x itemSize，

@@ -308,9 +308,11 @@ export function VirtualRunList<T>(props: VirtualRunListProps<T>) {
 	const rangeExtractor = useCallback((range: Range) => {
 		const count = entriesRef.current.length;
 		const merged = mergePinnedRange(defaultRangeExtractor(range), pinnedIndexesRef.current, count) as number[];
-		// 自证（仅开发期）：集成错了比事后看掉位好定位。真机上用户跑一次就会触发。
-		// 三项都是 tanstack 的硬前提：越界下标会取到 undefined 渲染空行，无序/重复会让它跳过行。
-		if (import.meta.env.DEV) {
+		// 自证（不设开发期开关）：集成错了比事后看掉位好定位。三项都是 tanstack 的硬前提——
+		// 越界下标会取到 undefined 渲染空行，无序/重复会让它跳过行。
+		// 不用「开发期环境常量」门控：那个写法在 vm 测试沙箱里是语法错误，整个文件加载失败。
+		// 成本只是 range 变化时 k 次比较（k = 视口行 + 钉行 ≈ 3）。
+		{
 			for (let i = 0; i < merged.length; i += 1) {
 				if (merged[i] < 0 || merged[i] >= count) {
 					throw new Error("[VirtualRunList] rangeExtractor 产出越界下标 " + merged[i] + "（count=" + count + "）");

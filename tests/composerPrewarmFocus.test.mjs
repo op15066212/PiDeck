@@ -84,6 +84,13 @@ const timeline = compile("src/renderer/src/hooks/useSessionTimelineController.ts
 	// 宿主插件 entryId 定位的轮询计划（reveal 通道）：controller 已改为值导入，
 	// 缺这一条时 loader 会回落到以 tests/ 为基准的 nodeRequire，解析 .ts 必失败。
 	"./timeline/timelineRevealChannel": compile("src/renderer/src/hooks/timeline/timelineRevealChannel.ts"),
+	// 补页页大小 / 窗口增长（2026-11 从 controller 提出）：编译真模块，内部只依赖 turnRenderWindow。
+	"../components/session/timeline/historyPagePolicy": compile("src/renderer/src/components/session/timeline/historyPagePolicy.ts", {
+		"./turnRenderWindow": { countUserTurns: () => 0, TIMELINE_SCROLLED_TURN_LIMIT: 3, TIMELINE_WINDOW_EXPAND_STEP: 3 },
+	}),
+	// 跳转收敛判据（2026-11 新增）：纯函数、无内部 import，编译真模块而不是 stub ——
+	// 它自己有 tests/jumpSettle.test.mjs，stub 掉会让控制器测试跑在假实现上。
+	"../components/session/timeline/jumpSettle": compile("src/renderer/src/components/session/timeline/jumpSettle.ts"),
 	// #400：控制器改为经 useVisibleTimelineRows 读视口内行，并用它导出的轮根选择器。
 	// 两样都必须给：只给 hook 不给 ROOT_ROW_SELECTOR 时，控制器里两处
 	// querySelectorAll(ROOT_ROW_SELECTOR) 会拿到 undefined（2026-10-23 评审指出的替身不完整）。

@@ -53,11 +53,15 @@ test("越界下标被跳过（limit = 行数）", () => {
 	assert.deepEqual(merged([1, 2], [-1, 0, 1], 5), [0, 1, 2]);
 });
 
-test("rangeExtractor 在开发期自证：越界 / 乱序 / 重复都会抛", () => {
-	// 这条不需要 e2e 基建：用户跑一次应用就会触发。集成错了比事后看掉位好定位。
+test("rangeExtractor 自证：越界 / 乱序 / 重复都会抛（不设开发期门控）", () => {
+	// 这条不需要 e2e 基建：集成错了比事后看掉位好定位。
+	// 原实现用「开发期环境常量」门控，那个写法在 vm 测试沙箱里是语法错误，
+	// 整个 VirtualRunList 加载失败 —— 三条既有测试因此长期红。改成无条件自证：
+	// 三项都是 tanstack 硬前提，违反会渲染空行/跳行，任何环境都该当场炸；
+	// 成本只是 range 变化时 k 次比较（k = 视口行 + 钉行 ≈ 3）。
 	const source = readFileSync("src/renderer/src/components/session/timeline/VirtualRunList.tsx", "utf8");
 	assert.match(source, /mergePinnedRange\(defaultRangeExtractor\(range\), pinnedIndexesRef\.current, count\)/, "必须把 count 传给 mergePinnedRange");
-	assert.match(source, /import\.meta\.env\.DEV/, "自证只在开发期跑");
+	assert.doesNotMatch(source, /import\.meta\.env\.DEV/, "不许再用开发期环境常量门控（沙箱里是语法错误）");
 	assert.match(source, /rangeExtractor 产出越界下标/, "越界要抛");
 	assert.match(source, /rangeExtractor 产出未严格升序/, "乱序/重复要抛");
 });

@@ -150,6 +150,7 @@ export function SessionOutlinePanel(props: { items: readonly OutlineRailItem[]; 
 					×
 				</button>
 			</div>
+			{/* scroll-ok: nested —— 本层是右缘目录面板的浮层列表：行模型由本组件持有（rows + @tanstack/react-virtual 的 useVirtualizer，getVirtualItems 只挂载视口行），不接 <VirtualStack> 是因为那一层绑定的是一次性滚动视口与会话时间线；这里接上去会把它变成第二个时间线。虚拟化本身已经在做（虚拟行 + getTotalSize 撑高），所以它不是「没虚拟化的长列表」。 */}
 			<div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto" style={{ minHeight: MIN_LIST_HEIGHT_PX }}>
 				<div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
 					{virtualizer.getVirtualItems().map((virtualRow) => {
