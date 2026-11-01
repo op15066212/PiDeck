@@ -5,11 +5,12 @@
  * 但它埋在 controller 三千行里，无法被纯函数测试覆盖。放在这里后，页大小与窗口增长
  * 都能直接喂输入断言输出。
  *
- * host 侧的上限是 10，不是我们可以随便调的：
- * - pi：SessionHistoryReader.MAX_TURN_PAGE_SIZE = 10，MAX_TURN_PAGE_SIZE 之外的请求值
- *   在 boundedTurnCount 里被静默夹到 10（SessionHistoryReader.ts:749 / :1066）
- * - DSH：DSH_HISTORY_TURN_PAGE_LIMIT = 10，normalizeDshTurnPageSize 同样夹到 10
- * 所以渲染层传 20 不会报错，只会拿到 10 —— 传大了没有收益，传小了才是缺陷。
+ * host 侧各有上限，不是我们可以随便调的（超出不报错，只会被静默夹到上界，
+ * 所以「传大了没收益、传小了才是缺陷」）：
+ * - pi：SessionHistoryReader.MAX_TURN_PAGE_SIZE = 200（2026-11 由 10 放开，
+ *   理由是跳转补页一次补十几次太慢；见该常量上的推演）
+ * - DSH：DSH_HISTORY_TURN_PAGE_LIMIT 仍是 10 —— DSH 的读页走另一条 host 路径，
+ *   没做同样的实测，不跟着放宽。DSH 会话的 backfill 会被夹到 10，回退成多次补页。
  */
 
 import { countUserTurns } from "./turnRenderWindow";
@@ -30,8 +31,25 @@ export const HISTORY_SCROLL_TURN_PAGE_SIZE = 3;
  *  曾经写成 3，理由是「回填在后台连续补页，一次 10 轮会让单批负载翻三倍」——
  *  那个调用方已经不存在了（grep "backfill" 只有这两处跳转），注释是过期的。
  *  页面高度除以 12 决定刻度数（约 90 根），147 轮的会话一根刻度背后可能差几十轮，
- *  每次只补 3 轮 = 用户要点十几次才落地。取 10 是 host 上限，不能再大。 */
-export const HISTORY_BACKFILL_TURN_PAGE_SIZE = 10;
+ *  每次只补 3 轮 = 用户要点十几次才落地。
+ *
+ *  2026-11 真机再修：10 轮仍要补十几次（156 轮会话 = 每次 10 轮 = 16 次读盘，每次约 0.5s，
+ *  用户看到的就是「一直在加载」）。取 200 —— host 的 MAX_TURN_PAGE_SIZE 同步放到 200，
+ *  **一次读盘覆盖一整份 156 轮会话**。数字推演：每轮约 33 条消息（本机实测 5156 条 / 156 轮），
+ *  200 轮 ≈ 6600 条 ≈ 13-26MB，落在渲染层 DISK_HISTORY_MESSAGE_LIMIT(8000) 之内，
+ *  所以这一页不会被整页丢弃（真被丢弃就会「点了没反应」）。 */
+export const HISTORY_BACKFILL_TURN_PAGE_SIZE = 200;
+
+/**
+ * 一次翻页最多把 DOM 窗口开大多少轮。
+ *
+ * 这是「数据」与「窗口」两个量的分界：页大小决定**数据**到齐多少轮（backfill 现在一次
+ * 200 轮），这个上限只决定**真实挂载**多少轮。两者曾经是同一个数（页大小 10 → 开 10 轮），
+ * 页大小一放到 200，若沿用同一个数就是一次挂载 200 轮 —— 那正是「点了就卡死」的形状。
+ * 剩余轮次由跳转链的指数扩窗（resolveJumpPendingAction）与滚动展开接管，代价只是
+ * 几帧的增量挂载，而不是一次性几百个组件树。
+ */
+export const HISTORY_MOUNTED_TURN_GROWTH_LIMIT = 10;
 
 export type HistoryLoadSource = "scroll" | "button" | "backfill";
 
@@ -52,8 +70,8 @@ export function resolveHistoryPageSize(source: HistoryLoadSource): number {
  *  disk 消息页不一定以 user 消息开头（可能在长回答中间切断），所以只要页非空就至少
  *  开放 1 轮，否则这一页会整页落在窗口外。
  */
-export function resolvePageWindowGrowth(messages: readonly { role?: string }[], pageSize: number = HISTORY_TURN_PAGE_SIZE): number {
+export function resolvePageWindowGrowth(messages: readonly { role?: string }[], pageSize: number = HISTORY_TURN_PAGE_SIZE, mountedLimit: number = HISTORY_MOUNTED_TURN_GROWTH_LIMIT): number {
 	if (messages.length === 0) return 0;
 	const turns = countUserTurns(messages);
-	return Math.min(pageSize, Math.max(1, turns));
+	return Math.min(pageSize, mountedLimit, Math.max(1, turns));
 }

@@ -744,9 +744,23 @@ export class SessionHistoryReader {
 	 */
 	private readonly prefetchCache = new Map<string, SessionMessagePage>();
 	private static readonly PREFETCH_CACHE_LIMIT = 2;
-	/** 轮次分页默认/上限：默认最近一次激活带 3 轮，单页最多 10 轮（防恶意参数撑爆 IPC） */
+	/** 轮次分页默认值：最近一次激活带 3 轮。 */
 	static readonly DEFAULT_TURN_PAGE_SIZE = 3;
-	private static readonly MAX_TURN_PAGE_SIZE = 10;
+	/**
+	 * 单页轮数上限。
+	 *
+	 * 曾经是 10：那时唯一的翻页路径是滚动（一次一屏），10 轮够用。
+	 * 现在多了「点刻度从底部跳到顶部」：两次点击之间可能隔着上百轮，逐页 10 轮要补十几次，
+	 * 每次一次 IPC + 一次文件解析（本机实测约 0.5s），用户看到的是「一直在加载」
+	 * （2026-11 真机，156 轮会话）。
+	 *
+	 * 取值 200 的来历（可复算）：本机一份 156 轮会话 = 5156 条消息条目，即每轮约 33 条；
+	 * 200 轮 ≈ 6600 条 ≈ 13-26MB 单页负载，落在渲染层 DISK_HISTORY_MESSAGE_LIMIT(8000)
+	 * 之内，所以「一次读满一整份 156 轮会话」是可能的 —— 这正是用户要的「点一次就到位」。
+	 * 再大的意义在于覆盖更长的会话，但单页负载会超过渲染层预算（超了就被整页丢弃，
+	 * 反而跳不到），所以上限停在 200 轮 / PAGE_WINDOW_ENTRIES 条。
+	 */
+	private static readonly MAX_TURN_PAGE_SIZE = 200;
 	/**
 	 * 子代理 start 锚点条目类型：pi-deck-subagents 桥接扩展在 subagents:created 时
 	 * 落盘（写入侧见 resources/extensions/pi-deck-subagents.ts 的 START_ENTRY_TYPE）。
@@ -766,11 +780,13 @@ export class SessionHistoryReader {
 	 */
 	private static readonly MAX_LOAD_WINDOW_ENTRIES = 1600;
 	/**
-	 * 翻页单页的条目预算（3 轮窗口之上叠的硬上限）。
-	 * 防御「上滚翻页反而把渲染进程撑爆」——页大小本受 MAX_TURN_PAGE_SIZE 限制，
-	 * 但 3 轮 × 数百条仍可超预算；单轮自身超预算时只能整轮保留。
+	 * 翻页单页的条目预算（轮数上界之上叠的条目硬上限）。
+	 * 防御「上滚翻页反而把渲染进程撑爆」——轮数受 MAX_TURN_PAGE_SIZE 限制，但单轮可能有
+	 * 数百条工具调用，200 轮照样能超。取 8000：与渲染层 DISK_HISTORY_MESSAGE_LIMIT
+	 * 同一预算（200 轮 × 33 条 ≈ 6600 条，留约 20% 余量），页再大就会被渲染层整页丢弃；
+	 * 单轮自身超预算时只能整轮保留。
 	 */
-	private static readonly MAX_PAGE_WINDOW_ENTRIES = 600;
+	private static readonly MAX_PAGE_WINDOW_ENTRIES = 8000;
 
 	/** 启动加载窗口条目预算（供 AgentManager 对齐窗口口径）。 */
 	static maxLoadWindowEntries(): number {
