@@ -17,7 +17,7 @@ import type { BranchDiffResult, CommitDetail, CommitEntry, GitAheadBehind, GitCh
 import { GitStatus } from "../../../../shared/types";
 import { EMPTY_GIT_COMMIT_COMPOSER, gitCommitComposerByScopeAtom, gitCommitScopeKey, openSettingsAtom, patchGitCommitComposer, type GitCommitComposerState } from "../../atoms";
 import { t } from "../../i18n";
-import { fileNameOnly, FileTree, getCollapsibleChangeDirs, ResourceGroup, ResourceRow } from "./git/GitResourceTree";
+import { fileNameOnly, ChangesGroupsStack, getCollapsibleChangeDirs, ResourceRow, type ChangesGroupSpec } from "./git/GitResourceTree";
 import { collectChangeTreeDirPaths, collectUnstagedResources, type GitChangeViewMode } from "./git/changeTree";
 import { GitCompactFilter, PaneHeader } from "./git/GitPanelControls";
 import { SourceControlGraph } from "./git/GitGraph";
@@ -935,6 +935,73 @@ export function GitPanel(props: GitPanelProps) {
 		setDeleteTarget(target);
 	}, []);
 
+	// 变更区三组的规格：合并后交给 ChangesGroupsStack 扁平虚拟化。
+	// 用 useMemo 稳定数组引用 —— ChangesGroupsStack 的 items memo 依赖它，每次
+	// render 新建数组会让虚拟行全量重算；批量动作走 actRef 保持引用稳定。
+	const changeGroupSpecs = useMemo<ChangesGroupSpec[]>(() => {
+		const mutatingNow = mutating || committing;
+		const specs: ChangesGroupSpec[] = [];
+		if (groups.merge.length > 0) {
+			specs.push({
+				key: "merge",
+				groupType: "merge",
+				title: t("git.mergeChanges"),
+				open: resourceOpen.merge,
+				onToggle: () => setResourceOpen((current) => ({ ...current, merge: !current.merge })),
+				resources: groups.merge,
+			});
+		}
+		if (groups.index.length > 0) {
+			specs.push({
+				key: "staged",
+				groupType: "index",
+				title: t("git.stagedChanges"),
+				open: resourceOpen.staged,
+				onToggle: () => setResourceOpen((current) => ({ ...current, staged: !current.staged })),
+				resources: groups.index,
+				allAction: () =>
+					actRef.current(() =>
+						props.unstageFiles(
+							props.projectId,
+							groups.index.map((resource) => resource.target),
+						),
+					),
+				allLabel: t("git.unstageAll"),
+				allDisabled: mutatingNow,
+				unstageFile,
+				deleteFile: props.deleteFiles ? deleteFile : undefined,
+				onOpenFile: props.onOpenFile,
+			});
+		}
+		if (workingChanges.length > 0) {
+			specs.push({
+				key: "changes",
+				groupType: "workingTree",
+				title: t("git.unstagedChanges"),
+				open: resourceOpen.changes,
+				onToggle: () => setResourceOpen((current) => ({ ...current, changes: !current.changes })),
+				resources: workingChanges,
+				allAction: () =>
+					actRef.current(() =>
+						props.stageFiles(
+							props.projectId,
+							workingChanges.map((resource) => resource.target),
+						),
+					),
+				allLabel: t("git.stageAll"),
+				allDisabled: mutatingNow,
+				stageFile,
+				discardFile,
+				deleteFile: props.deleteFiles ? deleteFile : undefined,
+				onOpenFile: props.onOpenFile,
+				stageDir: stageFiles,
+				discardDir,
+			});
+		}
+		return specs;
+	}, [groups, workingChanges, resourceOpen, mutating, committing, props.projectId, props.unstageFiles, props.stageFiles, props.deleteFiles, props.onOpenFile, unstageFile, deleteFile, stageFile, discardFile, stageFiles, discardDir]);
+	const changesScrollRef = useRef<HTMLDivElement | null>(null);
+
 	const runCommit = async (stageAll: boolean) => {
 		const message = commitMessage.trim();
 		if (!message || committing || mutating || hasUnresolvedConflicts || mutationRunningRef.current) return;
@@ -1546,81 +1613,19 @@ export function GitPanel(props: GitPanelProps) {
 									</div>
 								)}
 
-								{/* scroll-ok: nested —— 里面是 FileTree（目录→文件两层嵌套，展开态决定行数）与 ResourceGroup。
-								    扁平化会破坏目录层级语义与折叠定位，需先做「树→扁平行」的通用件，未验证不改。 */}
-								<div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain [scrollbar-gutter:stable]">
-									{groups.merge.length > 0 && (
-										<ResourceGroup title={t("git.mergeChanges")} count={groups.merge.length} open={resourceOpen.merge} onToggle={() => toggleResource("merge")}>
-											<FileTree resources={groups.merge} groupType="merge" onOpenWorkspaceFileDiff={props.onOpenWorkspaceFileDiff} mutating={mutating || committing} projectRoot={props.projectRoot} viewMode={changesViewMode} collapsedDirs={collapsedChangeDirs} onToggleDir={toggleChangeDir} />
-										</ResourceGroup>
-									)}
-									{groups.index.length > 0 && (
-										<ResourceGroup
-											title={t("git.stagedChanges")}
-											count={groups.index.length}
-											open={resourceOpen.staged}
-											onToggle={() => toggleResource("staged")}
-											allAction={() =>
-												act(() =>
-													props.unstageFiles(
-														props.projectId,
-														groups.index.map((resource) => resource.target),
-													),
-												)
-											}
-											allLabel={t("git.unstageAll")}
-											allDisabled={mutating || committing}
-										>
-											<FileTree
-												resources={groups.index}
-												groupType="index"
-												onOpenWorkspaceFileDiff={props.onOpenWorkspaceFileDiff}
-												mutating={mutating || committing}
-												unstageFile={unstageFile}
-												deleteFile={props.deleteFiles ? deleteFile : undefined}
-												onOpenFile={props.onOpenFile}
-												projectRoot={props.projectRoot}
-												viewMode={changesViewMode}
-												collapsedDirs={collapsedChangeDirs}
-												onToggleDir={toggleChangeDir}
-											/>
-										</ResourceGroup>
-									)}
-									{workingChanges.length > 0 && (
-										<ResourceGroup
-											title={t("git.unstagedChanges")}
-											count={workingChanges.length}
-											open={resourceOpen.changes}
-											onToggle={() => toggleResource("changes")}
-											allAction={() =>
-												act(() =>
-													props.stageFiles(
-														props.projectId,
-														workingChanges.map((resource) => resource.target),
-													),
-												)
-											}
-											allLabel={t("git.stageAll")}
-											allDisabled={mutating || committing}
-										>
-											<FileTree
-												resources={workingChanges}
-												groupType="workingTree"
-												onOpenWorkspaceFileDiff={props.onOpenWorkspaceFileDiff}
-												mutating={mutating || committing}
-												stageFile={stageFile}
-												discardFile={discardFile}
-												deleteFile={props.deleteFiles ? deleteFile : undefined}
-												onOpenFile={props.onOpenFile}
-												projectRoot={props.projectRoot}
-												viewMode={changesViewMode}
-												collapsedDirs={collapsedChangeDirs}
-												onToggleDir={toggleChangeDir}
-												stageDir={stageFiles}
-												discardDir={discardDir}
-											/>
-										</ResourceGroup>
-									)}
+								{/* 变更区：三组折成一条扁平行列表走一个 VirtualStack（行内 Radix ContextMenu +
+					    Seti SVG 的行渲染代价随变更文件数线性增长，无虚拟化时几千文件即卡顿全应用）。 */}
+								<div ref={changesScrollRef} className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain [scrollbar-gutter:stable]">
+									<ChangesGroupsStack
+										scrollRef={changesScrollRef}
+										groups={changeGroupSpecs}
+										viewMode={changesViewMode}
+										collapsedDirs={collapsedChangeDirs}
+										onToggleDir={toggleChangeDir}
+										mutating={mutating || committing}
+										onOpenWorkspaceFileDiff={props.onOpenWorkspaceFileDiff}
+										projectRoot={props.projectRoot}
+									/>
 								</div>
 							</div>
 						)}
