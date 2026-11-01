@@ -1942,6 +1942,9 @@ export function useSessionTimelineController(options: { sessionId?: string; mess
 		// 窗口重新插页——迟到分页只允许写缓存，不恢复锚点。
 		if (autoScrollRef.current || anchor.value.generation !== historyBrowseGenerationRef.current) {
 			loadMoreAnchorRef.current = undefined;
+			// 插入已被消费（跟底中或代数过期，不恢复锚点），必须在这里释放：否则
+			// prependSolid 只能靠 beginPrependSolid 的 1.5s 超时解除，期间强制整表渲染。
+			endPrependSolid();
 			return;
 		}
 		// 滚动翻页：钉住正在看的那一轮（不是整页 scrollHeight 差）。
