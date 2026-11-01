@@ -35,7 +35,7 @@ import type { MessageScrollerScrollApi } from "../components/agents/message-scro
 import { TURN_WINDOW_AUTO_EXPAND_THRESHOLD, resolveAutoExpandThreshold } from "./timeline/autoExpandThreshold";
 import { shouldAutoExpandRenderWindow, shouldApplyDelayedHistoryResult } from "./timeline/scrollHistoryPolicy";
 import { beginProgrammaticScroll, clearProgrammaticScroll, createProgrammaticScrollGuard, finishProgrammaticScrollFrame, isProgrammaticScrollActive } from "./timeline/programmaticScrollGuard";
-import { browsePinScrollTop, followBrowsePinAfterUserScroll, pickVisibleRootRow, shouldCompensateBrowsePin, type BrowsePin } from "./timeline/browsePin";
+import { browsePinScrollTop, followBrowsePinAfterUserScroll, pickVisibleRootRow, resolvePinnedRowFallback, shouldCompensateBrowsePin, type BrowsePin } from "./timeline/browsePin";
 import { countUserTurns, TIMELINE_MOUNTED_TURN_LIMIT, TIMELINE_SCROLLED_TURN_LIMIT, TIMELINE_WINDOW_EXPAND_STEP } from "../components/session/timeline/turnRenderWindow";
 import { readSessionFirstScreenPage } from "../components/session/sessionSubagentTranscript";
 import { estimateJumpExpandTurns, resolveJumpFallbackEntry, resolveJumpPendingAction } from "../components/session/timeline/jumpWindowPolicy";
@@ -468,6 +468,11 @@ export function useSessionTimelineController(options: { sessionId?: string; mess
 	// 时 isConnected 失效，自动回退一次重查。与 issue #400 的「可见行缓存」互补：
 	// 那是找新钉行（findBrowsePin），这是盯住已钉行，互不重叠。
 	const pinnedRowElRef = useRef<{ id: string; element: HTMLElement } | null>(null);
+	/** 上一次成功补偿时的容器总高：钉行查不到 DOM 时用它做高度差兜底。
+	 *  扩窗分帧（每帧 setScrolledWindowTurns）在虚拟化开启时会把钉行推出 overscan，
+	 *  measurePinnedRowTop 返回 null。此时按容器高度差补一次，精度低于按行对齐，
+	 *  但好过完全不补（不补 = 视口往下掉，用户看到内容整体上窜）。 */
+	const pinFallbackHeightRef = useRef(0);
 	const measurePinnedRowTop = useCallback((timeline: HTMLElement, messageId: string): number | null => {
 		const cached = pinnedRowElRef.current;
 		if (cached && cached.id === messageId && cached.element.isConnected) {
@@ -1291,6 +1296,24 @@ export function useSessionTimelineController(options: { sessionId?: string; mess
 		const timeline = timelineRef.current;
 		if (!pin || !timeline) return;
 		const currentTop = measurePinnedRowTop(timeline, pin.messageId);
+		const nextHeight = timeline.scrollHeight;
+		// 钉行不在 DOM（虚拟区外的行不渲染，扩窗分帧期间常见）：按容器高度差兜底。
+		// 必须放在 shouldCompensateBrowsePin 之前 —— 它在 currentViewportTop === null
+		// 时返回 false（browsePin.ts:shouldCompensateBrowsePin），放在后面就是死代码。
+		if (currentTop === null) {
+			const delta = resolvePinnedRowFallback({
+				expanding: pendingExpandTurnsRef.current > 0 || expandBatchFrameRef.current !== undefined,
+				previousHeight: pinFallbackHeightRef.current,
+				nextHeight,
+				viewportHeight: timeline.clientHeight,
+			});
+			// 更新点必须在所有出口之前，否则 shouldCompensate 早退后高度基准停在很早的值，
+			// 下一次 null 会把已经补过的量再补一遍。
+			pinFallbackHeightRef.current = nextHeight;
+			if (delta !== null) pinViewportAfterPrepend(timeline.scrollTop + delta);
+			return;
+		}
+		pinFallbackHeightRef.current = nextHeight;
 		if (
 			!shouldCompensateBrowsePin({
 				following: autoScrollRef.current,
@@ -1300,7 +1323,6 @@ export function useSessionTimelineController(options: { sessionId?: string; mess
 		) {
 			return;
 		}
-		if (currentTop === null) return;
 		pinViewportAfterPrepend(browsePinScrollTop(timeline.scrollTop, currentTop, pin.expectedViewportTop));
 		const after = measurePinnedRowTop(timeline, pin.messageId);
 		if (after !== null) {
