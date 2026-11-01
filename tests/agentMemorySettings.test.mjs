@@ -89,6 +89,33 @@ test("渲染层、预览、词典与锚点都接上了这个开关", () => {
 	assert.ok(enCopy.includes('"settings.agentMemoryEnabled"'), "en-US 词典缺键");
 });
 
+test("自动学习开关：默认关、依赖启用开关、四端接线齐全", async () => {
+	assert.equal(createDefaultAppSettings().agentMemoryAutoLearnEnabled, false, "学习会花模型调用费用，默认必须关");
+	const store = readFileSync("src/main/settings/SettingsStore.ts", "utf8");
+	assert.match(store, /agentMemoryAutoLearnEnabled:\s*false/, "SettingsStore 缺默认值");
+	assert.match(store, /"agentMemoryAutoLearnEnabled" in safePatch/, "SettingsStore 缺非法入参守卫");
+
+	const preview = readFileSync("src/renderer/src/previewApi.ts", "utf8");
+	assert.match(preview, /agentMemoryAutoLearnEnabled\s*:\s*false/);
+
+	const commonTab = readFileSync("src/renderer/src/components/app/settings/CommonTab.tsx", "utf8");
+	assert.match(commonTab, /draft\.agentMemoryAutoLearnEnabled\s*\?\?\s*false/);
+	assert.match(commonTab, /disabled=\{!\(draft\.agentMemoryEnabled/, "未启用记忆时学习开关应置灰");
+
+	const fieldAnchors = readFileSync("src/renderer/src/utils/settingsFieldAnchors.ts", "utf8");
+	assert.match(fieldAnchors, /common-agent-memory-auto-learn/);
+
+	// 学习循环必须挂在「回合结算」上，并且真的读这两个开关（否则开了也不跑）。
+	const main = readFileSync("src/main/index.ts", "utf8");
+	assert.match(main, /runLearnerPass\(/, "主进程没接学习循环");
+	assert.match(main, /!\s*settings\??\.agentMemoryEnabled\s*\|\|\s*!\s*settings\.agentMemoryAutoLearnEnabled/, "学习循环必须同时看两个开关");
+	for (const key of ["settings.agentMemoryAutoLearn", "settings.agentMemoryAutoLearnDesc"]) {
+		assert.ok(readFileSync("src/renderer/src/i18n/rendererCopy.zh-CN.ts", "utf8").includes(`"${key}"`), `missing i18n key: ${key}`);
+		assert.ok(readFileSync("src/renderer/src/i18n/rendererCopy.en-US.ts", "utf8").includes(`"${key}"`), `missing en key: ${key}`);
+		assert.ok(readFileSync("src/renderer/src/i18n/rendererCopy.zh-TW.ts", "utf8").includes(`"${key}"`), `zh-TW 没重新生成：${key}`);
+	}
+});
+
 test("设置变更会触发注册/撤销（IPC 与主进程两端都接了）", () => {
 	const systemIpc = readFileSync("src/main/ipc/systemIpc.ts", "utf8");
 	assert.match(systemIpc, /reactToAgentMemorySettings\?/);

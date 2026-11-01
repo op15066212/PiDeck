@@ -265,7 +265,19 @@ const piDeckMcp: PiDeckMcpDesktopApi = {
 	connection: () => ipcRenderer.invoke(ipcChannels.piDeckMcpConnection),
 };
 
+/**
+ * 智能体记忆的设置页视图。返回值统一是 `{ok,value}` / `{ok:false,code}`，
+ * 渲染层据此区分「操作失败（有稳定错误码）」和「IPC 层异常」，不需要解析错误文案。
+ */
+const agentMemory = {
+	status: () => ipcRenderer.invoke(ipcChannels.agentMemoryStatus) as Promise<import("../shared/types/agentMemory").AgentMemoryResult<import("../shared/types/agentMemory").AgentMemoryStatus>>,
+	clearIndex: () => ipcRenderer.invoke(ipcChannels.agentMemoryClearIndex) as Promise<import("../shared/types/agentMemory").AgentMemoryResult<{ removed: number }>>,
+	exportBundle: () => ipcRenderer.invoke(ipcChannels.agentMemoryExport) as Promise<import("../shared/types/agentMemory").AgentMemoryResult<import("../shared/types/agentMemory").AgentMemoryExportOutcome>>,
+	importBundle: () => ipcRenderer.invoke(ipcChannels.agentMemoryImport) as Promise<import("../shared/types/agentMemory").AgentMemoryResult<import("../shared/types/agentMemory").AgentMemoryImportResult>>,
+};
+
 const api = {
+	agentMemory,
 	piDeckMcp,
 	hostPlugins,
 	clipboard: {

@@ -4,7 +4,7 @@
 
 对齐的参考实现是 `pi-hermes-memory`（pi 扩展），复刻它的取舍见文末「与 hermes 的差异」。本文件是这一领域的唯一设计入口；宿主通道边界另见 `docs/host-boundaries.md` 例外八。
 
-**状态**：M2 已完成（服务器 + 采集 + pi/ACP 挂载 + 两个测试文件）。DSH 侧为设计待办，见 §5。
+**状态**：M2 已完成（服务器 + 采集 + pi/ACP 挂载 + 设置页状态/导出/导入/清空索引）。DSH 侧为设计待办，见 §5。
 
 ## 1. 为什么是「独立 stdio MCP 服务器」
 
@@ -21,12 +21,15 @@
 ## 2. 存储模型
 
 ```
-<userData>/agent-memory/
+<userData>/memory/
 ├── MEMORY.md              # 全局事实（预算 8000 字符 / 120 条）
 ├── USER.md                # 用户画像（4000 / 60）
 ├── STANDING.md            # 常驻指令（4000 / 40，暂无写入工具）
 ├── failures.md            # 教训，条目带 [category] 前缀（8000 / 120）
 ├── projects/<projectKey>/MEMORY.md + failures.md
+├── devices/<deviceKey>/MEMORY.md   # 设备专属事实（盘符、本机路径），不导出
+├── device.json            # 本机档案 {id, name}，首次使用时生成后固定
+├── tombstones.json        # 删除记录，让「删掉的记忆」不会因导入旧包复活
 └── memory.db              # SQLite 镜像 + 会话索引（可随时删，自愈重建）
 ```
 
@@ -41,13 +44,13 @@
 
 | 工具 | 用途 | 关键约束 |
 |---|---|---|
-| `memory_add` | 写一条事实 | `target` ∈ memory/user/project/failure；project 必须有 projectId |
+| `memory_add` | 写一条事实 | `target` ∈ memory/user/project/failure/device；project 必须有 projectId；device 只落本机 |
 | `memory_replace` | 改一条（事实变了用它，别加第二条） | 定位必须唯一，歧义报 `entry-ambiguous` |
 | `memory_remove` | 删一条 | 同上 |
 | `memory_search` | 全文检索（全局+项目+教训） | target 过滤在 FTS 与 LIKE 两条通道都生效 |
 | `memory_get` | 按 target 列举（旧→新） | 分页 |
 | `session_search` | 跨后端检索历史会话 | 采集源为空时报 `session-sources-empty` |
-| `memory_status` | 预算用量 + 索引规模 | 用于诊断「记忆到底有没有在工作」 |
+| `memory_status` | 预算用量（含设备作用域）+ 索引规模 | 用于诊断「记忆到底有没有在工作」 |
 
 业务错误走 MCP `isError: true` + `{ok:false,error:{code,detail}}`，模型能据此自我纠正；协议错误才走 JSON-RPC error。单条请求失败不会杀掉服务器（客户端会判定服务器已死）。
 
@@ -69,6 +72,46 @@
 - `PIDECK_AGENT_MEMORY_PROJECT_CWD`：会话 cwd，用于推导项目键
 - `PIDECK_AGENT_MEMORY_SOURCES`：会话采集源 JSON `[{backend:"pi"|"acp",dir,project?}]`，服务器自己不猜路径
 
+## 4.5 导出 / 导入：多设备共用
+
+导出的是一个 **JSON 包**（不是数据库文件）：真值本来就是可手改的 Markdown，导出条目即可，索引到哪台机器都按文件重建。包是普通 JSON，可以看、可以进 git、可以自己删条目再导入。
+
+```
+{ format: "pideck-agent-memory", version: 1, exportedAt, device: { id, name }, entries[], tombstones[] }
+```
+
+**合并语义（只有一套，不给多种模式）**：
+
+- **并集**：本地独有与包内独有的都留下，不覆盖、不删本地。
+- **按内容去重**：折叠空白 + 转小写相等即同一条。记忆是「一句话事实」而不是可并发编辑的文档；不引入条目 id，Markdown 才能保持干净、手改不破坏身份。
+- **删除靠墓碑传播**：`memory_remove` 会记一条墓碑（内容键 + 作用域）。导入时包内墓碑优先——A 机删掉的内容，B 机导入后跟着删，且以后导旧包也不会复活。墓碑上限 500 条，只服务「不该复活」，不是审计日志。
+- **设备专属记忆永不出设备**：`devices/<key>/` 下的条目不进包；包里带设备条目的也一律拒收（别的机器的盘符在本机是错的）。
+- **导入内容同样不可信**：不可见字符/注入句式/疑似密钥、未知 target、超 2000 字符、空条目 → 计入 `rejected`，不中断整次导入。整包格式或版本不对则直接报错，不做半截导入。
+- **幂等**：同一个包导两次，第二次 `added: 0`。
+
+设置页（通用 → 智能体记忆）有四个操作：状态行（文件体积/条目数/索引规模/本机名字）、导出、导入、清空索引。清空索引只删 SQLite 里的行，记忆文件不动，下一次检索自动重建。
+
+IPC：`agentMemory:status | clear-index | export | import`（`src/main/ipc/agentMemoryIpc.ts`），只接受主框架来源、入参校验、错误以 `{ok:false,code}` 返回而不是抛。
+
+## 4.6 学习循环（宿主侧，默认关）
+
+记忆平时只由模型主动 `memory_add`。开启「自动学习」后，宿主在**回合结算**时尝试一次提炼：
+
+1. `compositeAgentGateway.onAgentSettled` 是三种后端统一的结算信号（同一处也在发「会话完成」通知）。pi 会话也参与，记忆是跨后端同一份数据。
+2. 先做一次增量索引（`indexSources`，按文件 size/mtime 跳过未变文件），再从索引取该会话最近 40 条消息——**不为学习新写一套会话读取**：三种后端的原始格式差异已经在索引层消化掉了。
+3. 水位判断：`<root>/learn-state.json` 记录每个会话已学到第几轮用户回合，**每新增 12 轮**才调一次模型。水位按整份会话的用户回合数算，不是按那 40 条消息的窗口算（否则窗口一满就再也学不到）。
+4. 一次模型调用（独立侧车实例 `createCompletionHelperService("agent-memory")`，与增强/预测/划词各自独立进程，避免把它们打断），模型优先级 = 用户指定的增强模型 > 该会话记录模型，都没有就跳过。
+5. 模型输出按 `[`…`]` 截取成 JSON 数组，逐条校验 target/content/category，最多 3 条，其余计入 rejected。
+6. 落盘走**工具层同一个 `addMemory`**：扫描（注入/密钥/不可见字符）、去重、预算裁剪一处生效，学习绕不过闸门。`target=project` 但没有项目上下文时退化成全局经验，不当失败丢弃。
+7. 只有真的调用过模型才推水位：模型失败/超时/被取消保持原水位，下次满足阈值再试。
+
+设计取舍：
+- **默认关闭**并且是独立一格外关：开启会产生模型调用费用，用户必须显式同意；主开关关闭时学习开关在设置页置灰。
+- **不静默扩面**：单次最多 3 条、单会话每 12 轮一次，`runLearnerPass` 全局单飞（同时只跑一趟）。
+- **失败只进日志**：学习是可选增益，异常绝不影响会话（`catch` 只写 `agent-memory` 日志）。
+
+守卫测试（`tests/agentMemoryLearn.test.mjs`，8 条）：不足阈值一次都不调模型、达到阈值落盘并推水位、再跑不重复计费、模型失败不推水位（下次重试）、围栏可解/超量截断/坏 target 拒收、注入内容被工具层闸门拒收、重复条目计入 duplicate、未指定会话直接跳过。
+
 ## 5. DSH 为什么还没接
 
 DSH 不走 MCP（`src/main/dsh/` 里没有 MCP 客户端），所以工具面进不去。可行的注入路径是它的 `dsh-agent-instructions` 插件的 `instructionFileCandidates`：宿主落一份 `AGENTS.memory.md` 到项目根的候选位置，DSH 自己读进上下文。
@@ -89,17 +132,18 @@ DSH 不走 MCP（`src/main/dsh/` 里没有 MCP 客户端），所以工具面进
 node --test tests/agentMemoryServer.test.mjs   # 工具层 + 协议层（真进程走 stdio）
 node --test tests/agentMemoryMounts.test.mjs   # 挂载形态、mcp.json 合并/幂等/可撤销、开关动作、项目键
 node --test tests/agentMemorySettings.test.mjs  # 开关默认关、非法入参、渲染层与主进程接线
+node --test tests/agentMemorySync.test.mjs     # 导出形状、并集导入、墓碑、设备作用域
 node --test tests/zhTwCopy.test.mjs            # 改了 zh-CN 词典后必须重跑生成器
 npm run typecheck
 ```
 
-守卫测试固定的行为：重复写入幂等、目标隔离、写入扫描拒绝、替换/删除歧义报错、CJK 子串检索、target 过滤不漏、会话指纹未变时跳过、追加后整份重灌不重复、`system` 消息不入库、fork 会话共享消息 id 时两边都要入索引、`cwd` 必须能派生出项目键、mcp.json 损坏时不覆盖、打包/开发两态脚本路径。
+守卫测试固定的行为（含学习循环：不白调模型、失败不推水位、写入过扫描闸门）：重复写入幂等、目标隔离、写入扫描拒绝、替换/删除歧义报错、CJK 子串检索、target 过滤不漏、会话指纹未变时跳过、追加后整份重灌不重复、`system` 消息不入库、fork 会话共享消息 id 时两边都要入索引、`cwd` 必须能派生出项目键、mcp.json 损坏时不覆盖、打包/开发两态脚本路径、导出不含设备记忆、导入幂等且坏条目不断任务、墓碑双向传播、设备记忆可检索且不进包。
 
 ## 8. 与 hermes 的差异
 
 | 维度 | hermes | 这里 | 原因 |
 |---|---|---|---|
-| 学习循环 | 每 N 轮起子进程让模型从对话里提炼记忆 | 不做 | 三后端都跑得起的"提炼"要么各写一遍会话读取，要么给宿主加一条模型调用通道；先做确定性的工具面 |
+| 学习循环 | 每 N 轮起子进程让模型从对话里提炼记忆 | 有，宿主侧 opt-in（§4.6） | 走已有的回合结算信号 + 引擎索引取消息，不新增会话读取实现 |
 | 常驻注入 | 每轮把记忆块塞进系统提示 | pi 不做（工具按需检索）；DSH 走 §5 | pi 走注入要改 pi 侧扩展，等于再开一条通道 |
 | 纠正检测 | 三趟正则 + 挂起确认 | 不做 | 同上，依赖"每轮都看到对话" |
 | 技能/合并/固化 | `skill_manage` + 自动 consolidator | 不做 | 记忆先跑通，技能库是另一条产品线 |
@@ -107,7 +151,8 @@ npm run typecheck
 
 ## 9. 剩余工作（按价值排序）
 
-1. **状态页**：`memory_status` 工具已能查预算与索引规模，但设置页还看不到（没有记忆文件大小/会话条数的展示与「清空索引」按钮）。
-2. **DSH 注入**（§5）：落 `AGENTS.memory.md` + 候选配置。
-3. **常驻指令 `STANDING.md` 的写入入口**：文件与预算已在，缺工具与 UI。
+1. **DSH 注入**（§5）：落 `AGENTS.memory.md` + 候选配置。DSH 没有 MCP 支持，工具面接不进去，只能走注入。
+2. **常驻指令 `STANDING.md` 的写入入口**：文件与预算已在，缺工具与 UI。
+3. **技能库**：hermes 的 `skill_manage` + 自动 consolidated；这是另一条产品线，学习循环目前只写记忆条目。
 4. **采集扩容**：DSH 会话、`imported` 会话（claude/qoder 等）的 JSONL 都能接同一套解析器，只需加 adapter。
+5. **远端同步**：导出包目前靠手动文件搬运。WebDAV/对象存储要新增外部副作用与凭据管理，先不做。

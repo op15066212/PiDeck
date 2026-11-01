@@ -23,8 +23,19 @@ export const TARGET_FILES = {
 	failure: "failures.md",
 };
 
-/** 允许写入的 target 集合；`STANDING` 只允许 `memory` target 里显式指定的 scope。 */
-export const MEMORY_TARGETS = ["memory", "user", "project", "failure"];
+/**
+ * 允许写入的 target 集合。
+ *
+ * - `memory` / `user` / `failure`：全局（或带 projectId 的项目）记忆
+ * - `project`：按 cwd 派生键落 `projects/<key>/`，跨后端共享
+ * - `device`：**只在这台机器上有意义**的记忆（本机路径、盘符、家目录约定），
+ *   落 `devices/<设备键>/`，导出时默认不带，因此不会污染别的设备
+ * - `standing`：不是写入 target，只由文件侧读取
+ */
+export const MEMORY_TARGETS = ["memory", "user", "project", "failure", "device"];
+
+/** 设备作用域的 id 前缀：`device:<key>` 走 `devices/` 目录，与项目作用域共用文件层。 */
+export const DEVICE_SCOPE_PREFIX = "device:";
 export const FAILURE_CATEGORIES = ["failure", "correction", "insight", "preference", "convention", "tool-quirk"];
 
 /**
@@ -83,14 +94,58 @@ export function resolveMemoryRoot(env = process.env) {
 	return path.resolve(root);
 }
 
+/**
+ * 设备专属记忆的目录名。
+ *
+ * 用 `devices/<key>/` 而不是 `projects/`：两者生命周期不同（项目可移动/重建，设备是这台机器），
+ * 混在一起会让「清空某项目记忆」误删本机事实。
+ */
+export function resolveDeviceDir(root, deviceKey) {
+	if (typeof deviceKey !== "string" || !PROJECT_ID_PATTERN.test(deviceKey)) throw new Error("device-key-invalid");
+	const dir = path.join(root, "devices", deviceKey);
+	const normalized = path.resolve(dir);
+	if (normalized !== dir || !normalized.startsWith(path.resolve(root) + path.sep)) throw new Error("device-key-invalid");
+	return normalized;
+}
+
+/** `device:<key>` 形式的作用域 id → 设备键；不是设备作用域时返回空串。 */
+export function deviceKeyFromScope(projectId) {
+	if (typeof projectId !== "string" || !projectId.startsWith(DEVICE_SCOPE_PREFIX)) return "";
+	const key = projectId.slice(DEVICE_SCOPE_PREFIX.length);
+	return PROJECT_ID_PATTERN.test(key) ? key : "";
+}
+
 /** 项目子目录；projectId 非法时抛错而不是悄悄落到全局目录。 */
 export function resolveProjectDir(root, projectId) {
+	// 设备作用域复用同一套「id → 目录」逻辑，只是根目录不同。
+	const deviceKey = deviceKeyFromScope(projectId);
+	if (deviceKey) return resolveDeviceDir(root, deviceKey);
 	if (typeof projectId !== "string" || !PROJECT_ID_PATTERN.test(projectId)) throw new Error("project-id-invalid");
 	const dir = path.join(root, "projects", projectId);
 	// 双保险：join 之后再规范化比较一次前缀，任何诡异的 id 都不允许逃出去。
 	const normalized = path.resolve(dir);
 	if (normalized !== dir || !normalized.startsWith(path.resolve(root) + path.sep)) throw new Error("project-id-invalid");
 	return normalized;
+}
+
+/**
+ * 设备档案：`{ id, name }`。
+ *
+ * `id` 在首次用到时随机生成并落盘，之后随导出包一起走，用来回答「这批记忆来自哪台设备」。
+ * 不放进 `settings.json`：记忆目录要能单独拷走/备份，档案得跟着它自己走。
+ */
+export function deviceProfilePath(root) {
+	return path.join(root, "device.json");
+}
+
+/**
+ * 删除墓碑：导入时用来避免「在 A 机删掉的记忆被 B 机的旧包复活」。
+ *
+ * 只影响**导入**，不影响当场的 `memory_add`——用户/Agent 现在主动写一条，
+ * 说明意图明确，不该被一条历史墓碑挡住。
+ */
+export function tombstonesPath(root) {
+	return path.join(root, "tombstones.json");
 }
 
 /** 索引库路径（固定落根目录，项目作用域共用同一个库，靠 project_id 列区分）。 */

@@ -96,6 +96,7 @@ let previewSettings: AppSettings = {
 	sendShortcut: "enter-send",
 	defaultAgentBackend: "pi",
 	agentMemoryEnabled: false,
+	agentMemoryAutoLearnEnabled: false,
 	floatingBallShowRunningBadge: true,
 	theme: "system",
 	themeScheduleLightStart: "07:00",
@@ -366,6 +367,24 @@ export function createPreviewApi(): PiDesktopApi {
 			launch: async () => ({ ok: false as const, error: "preview-unavailable" as const }),
 			getStatus: async () => ({ phase: "idle" as const }),
 			onStateChanged: () => () => undefined,
+		},
+		// 智能体记忆预览桩：预览模式没有主进程，给一份空快照让设置页照常渲染。
+		agentMemory: {
+			status: async () => ({
+				ok: true as const,
+				value: {
+					root: "preview/memory",
+					totalBytes: 0,
+					indexBytes: 0,
+					files: [],
+					device: { id: "preview", name: "preview" },
+					index: null,
+					indexError: "preview-unavailable",
+				},
+			}),
+			clearIndex: async () => ({ ok: true as const, value: { removed: 0 } }),
+			exportBundle: async () => ({ ok: true as const, value: { canceled: true } }),
+			importBundle: async () => ({ ok: true as const, value: { canceled: true, added: 0, duplicate: 0, tombstoned: 0, rejected: 0, removed: 0, scopes: [], device: "" } }),
 		},
 		shellMenu: {
 			getQuickTaskState: async () => ({ supported: false, registered: false }),

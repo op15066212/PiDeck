@@ -16,6 +16,7 @@ import { entryCategory } from "./format.mjs";
 import { FAILURE_CATEGORIES, FILE_BUDGETS, MAX_ENTRY_CHARS, MEMORY_TARGETS } from "./paths.mjs";
 import { scanMemoryContent } from "./scan.mjs";
 import { indexSources } from "./sessions.mjs";
+import { addTombstone, deviceScopeId } from "./sync.mjs";
 
 /** 工具错误：`code` 是稳定标识（测试与前端都依赖它），`detail` 只放非敏感补充。 */
 export class MemoryToolError extends Error {
@@ -26,14 +27,26 @@ export class MemoryToolError extends Error {
 	}
 }
 
-/** target → 文件作用域。`project`/带 projectId 的 `failure` 落到项目目录，其余落根目录。 */
-function resolveScope(target, projectId) {
+/**
+ * target → 文件作用域。
+ * - `project` → `projects/<cwd 派生键>/`（跨后端共享）
+ * - `device` → `devices/<本机键>/`（只在这台机器有意义；导出包不带，导入也不收）
+ * - 带 projectId 的 `failure` → 项目目录；其余落根目录
+ */
+function resolveScope(target, projectId, root) {
 	if (target === "project") {
 		if (!projectId) throw new MemoryToolError("project-id-required");
 		return { target: "memory", projectId };
 	}
+	if (target === "device") return { target: "memory", projectId: deviceScopeId(root) };
 	if (target === "failure" && projectId) return { target: "failure", projectId };
 	return { target, projectId: "" };
+}
+
+/** 条目所属的同步作用域标签（墓碑与检索结果都用它）。 */
+function scopeLabel(projectId) {
+	if (!projectId) return "global";
+	return projectId.startsWith("device:") ? "device" : "project";
 }
 
 /** 把某个 target 的 Markdown 当前内容回灌进索引。 */
@@ -55,6 +68,8 @@ function syncAll(root, projectId) {
 	syncTarget(root, "user", "");
 	syncTarget(root, "memory", "");
 	syncTarget(root, "failure", "");
+	// 设备作用域每次检索都要带上：本机事实（盘符、家目录约定）对当前机器永远相关。
+	syncTarget(root, "memory", deviceScopeId(root));
 	if (projectId) {
 		syncTarget(root, "memory", projectId);
 		syncTarget(root, "failure", projectId);
@@ -81,7 +96,7 @@ function assertCategory(category) {
 /** 新增一条。重复内容视为成功（幂等），返回 `duplicate: true` 让调用方知道没写新行。 */
 export function addMemory(root, { target = "memory", content, category, projectId = "" }) {
 	if (!MEMORY_TARGETS.includes(target)) throw new MemoryToolError("target-invalid");
-	const scope = resolveScope(target, projectId);
+	const scope = resolveScope(target, projectId, root);
 	const safeCategory = assertCategory(category);
 	const trimmed = assertWritable(content);
 	const block = scope.target === "failure" ? formatFailureEntry(safeCategory ?? "insight", trimmed) : trimmed;
@@ -97,7 +112,7 @@ export function addMemory(root, { target = "memory", content, category, projectI
 	return {
 		ok: true,
 		target,
-		scope: scope.projectId ? "project" : "global",
+		scope: scopeLabel(scope.projectId),
 		projectId: scope.projectId,
 		duplicate: outcome.result.duplicate,
 		count: outcome.count,
@@ -110,7 +125,7 @@ export function addMemory(root, { target = "memory", content, category, projectI
 export function replaceMemory(root, { target = "memory", oldContent, content, projectId = "" }) {
 	if (!MEMORY_TARGETS.includes(target)) throw new MemoryToolError("target-invalid");
 	if (typeof oldContent !== "string" || oldContent.trim().length === 0) throw new MemoryToolError("old-content-required");
-	const scope = resolveScope(target, projectId);
+	const scope = resolveScope(target, projectId, root);
 	const trimmed = assertWritable(content);
 	const wanted = normalizeKey(oldContent);
 	const replacement = scope.target === "failure" ? formatFailureEntry(parseFailureEntry(trimmed).category, parseFailureEntry(trimmed).content) : trimmed;
@@ -126,14 +141,14 @@ export function replaceMemory(root, { target = "memory", oldContent, content, pr
 	});
 
 	syncTarget(root, scope.target, scope.projectId);
-	return { ok: true, target, scope: scope.projectId ? "project" : "global", projectId: scope.projectId, count: outcome.count, dropped: outcome.dropped };
+	return { ok: true, target, scope: scopeLabel(scope.projectId), projectId: scope.projectId, count: outcome.count, dropped: outcome.dropped };
 }
 
 /** 删除：定位规则与替换一致。 */
 export function removeMemory(root, { target = "memory", content, projectId = "" }) {
 	if (!MEMORY_TARGETS.includes(target)) throw new MemoryToolError("target-invalid");
 	if (typeof content !== "string" || content.trim().length === 0) throw new MemoryToolError("old-content-required");
-	const scope = resolveScope(target, projectId);
+	const scope = resolveScope(target, projectId, root);
 	const wanted = normalizeKey(content);
 
 	const outcome = mutateEntries(root, scope.target, scope.projectId, (entries) => {
@@ -146,19 +161,22 @@ export function removeMemory(root, { target = "memory", content, projectId = "" 
 	});
 
 	syncTarget(root, scope.target, scope.projectId);
-	return { ok: true, target, scope: scope.projectId ? "project" : "global", projectId: scope.projectId, count: outcome.count };
+	// 删除要留墓碑：否则另一台设备用旧包导入时会把这条「删掉的记忆」复活。
+	// 墓碑只拦导入，不拦本进程的 add——用户当场重写同一条说明意图明确。
+	if (outcome.result.removed) addTombstone(root, { target: scope.target, scope: scopeLabel(scope.projectId), projectKey: scope.projectId, content });
+	return { ok: true, target, scope: scopeLabel(scope.projectId), projectId: scope.projectId, count: outcome.count };
 }
 
 /** 列出条目（按文件顺序，最老的在前）。 */
 export function getMemories(root, { target = "memory", projectId = "", limit = 50, offset = 0 } = {}) {
 	if (!MEMORY_TARGETS.includes(target)) throw new MemoryToolError("target-invalid");
-	const scope = resolveScope(target, projectId);
+	const scope = resolveScope(target, projectId, root);
 	const entries = readEntries(root, scope.target, scope.projectId);
 	const sliced = entries.slice(Math.max(0, offset), Math.max(0, offset) + Math.max(1, Math.min(200, limit)));
 	return {
 		ok: true,
 		target,
-		scope: scope.projectId ? "project" : "global",
+		scope: scopeLabel(scope.projectId),
 		projectId: scope.projectId,
 		total: entries.length,
 		offset,
@@ -171,16 +189,21 @@ export function searchMemory(root, { query, target, projectId = "", limit = 10 }
 	if (typeof query !== "string" || query.trim().length === 0) throw new MemoryToolError("query-required");
 	const targets = target && target !== "project" ? [target] : ["memory", "user", "standing", "failure", "project"];
 	syncAll(root, projectId);
-	const found = searchEntries(root, query.trim(), { limit, targets, projectId });
+	const found = searchEntries(root, query.trim(), { limit, targets, projectId, deviceProjectId: deviceScopeId(root) });
 	if (found.ok) return { ok: true, query: query.trim(), degraded: false, hits: found.hits };
 
 	// 降级：没有索引时直接在文件内容里找子串。仍能命中，只是没有 bm25 排序。
+	// 设备作用域在这里同样要算进去（索引不可用不该让「本机事实」搜不到）。
 	const wanted = query.trim().toLowerCase();
+	const deviceEntries = readEntries(root, "memory", deviceScopeId(root));
 	const hits = [];
 	for (const [key, entries] of Object.entries(readAllEntries(projectId, root))) {
 		for (const entry of entries) {
 			if (entry.toLowerCase().includes(wanted)) hits.push({ content: entry, target: key.startsWith("project") ? "project" : key, scope: key.startsWith("project") ? "project" : "global", projectId: key.startsWith("project") ? projectId : "", score: 1 });
 		}
+	}
+	for (const entry of deviceEntries) {
+		if (entry.toLowerCase().includes(wanted)) hits.push({ content: entry, target: "memory", scope: "device", projectId: deviceScopeId(root), score: 1 });
 	}
 	return { ok: true, query: query.trim(), degraded: true, reason: found.reason, hits: hits.slice(0, limit) };
 }
@@ -196,11 +219,14 @@ export function searchSessions(root, { query, project = "", limit = 10, sources 
 }
 
 /** 自检：预算占用 + 索引规模。用于「记忆系统到底有没有在工作」的快速判定。 */
-export function memoryStatus(root, { projectId = "", sources = [] }) {
+export function memoryStatus(root, { projectId = "", sources = [] } = {}) {
 	const global = readAllEntries(projectId, root);
 	const usage = {};
-	for (const [key, entries] of Object.entries(global)) {
-		const target = key === "projectMemory" ? "memory" : key === "projectFailure" ? "failure" : key;
+	// 设备作用域单列一项：它不在 global 里，但同样是「这台机器上真实占用的记忆」。
+	// 形状必须和 global 的键一致（同一张表渲染），所以放在同一个循环里算。
+	const scopes = { ...global, device: readEntries(root, "memory", deviceScopeId(root)) };
+	for (const [key, entries] of Object.entries(scopes)) {
+		const target = key === "projectMemory" || key === "device" ? "memory" : key === "projectFailure" ? "failure" : key;
 		const budget = FILE_BUDGETS[target];
 		usage[key] = { entries: entries.length, chars: entries.join("\n§\n").length, maxEntries: budget.maxEntries, maxChars: budget.maxChars };
 	}

@@ -579,6 +579,11 @@ export type AppSettings = {
 	 * 不改动用户在 mcp.json 里的其它服务器。记忆文件在 <userData>/agent-memory/，关掉不删除。
 	 */
 	agentMemoryEnabled: boolean;
+	/**
+	 * 记忆学习循环：回合结算后按阈值让模型从会话里提炼记忆（默认关）。
+	 * 会产生模型调用与费用，因此与「启用记忆」分开一格开关。
+	 */
+	agentMemoryAutoLearnEnabled: boolean;
 
 	// ── 模型收藏：ModelPicker 中用 ☆ 标记，收藏的模型在列表中置顶 ──
 	/** 收藏的模型 ID 列表 */
@@ -1279,6 +1284,7 @@ export function createDefaultAppSettings(): AppSettings {
 		browserAgentAutoApprove: true,
 		// 智能体记忆默认关闭：关闭时不注册、不改动 pi 的 mcp.json，与引入前完全一致
 		agentMemoryEnabled: false,
+		agentMemoryAutoLearnEnabled: false,
 		favoriteModels: [],
 
 		// 字体配置：与 main SettingsStore 默认值保持一致，避免启动时闪烁

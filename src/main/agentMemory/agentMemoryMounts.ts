@@ -80,6 +80,29 @@ export function buildAgentMemoryMount(input: {
 	return { command: input.execPath, args: [input.scriptPath], env };
 }
 
+/**
+ * 从挂载描述里取回记忆根目录。
+ *
+ * 学习循环这类宿主侧行为需要与服务器**同一份**根目录，但记忆位置只应有一处定义
+ * （`buildAgentMemoryMount`）。让调用方从 mount 反读，避免 index.ts 再拼一次路径。
+ */
+export function memoryDirOfMount(mount: AgentMemoryMount): string {
+	return mount.env[AGENT_MEMORY_ENV.dir] ?? "";
+}
+
+/** 从挂载描述里取回会话索引来源（服务器与学习循环共用同一组来源）。 */
+export function sourcesOfMount(mount: AgentMemoryMount): AgentMemorySource[] {
+	const raw = mount.env[AGENT_MEMORY_ENV.sources];
+	if (!raw) return [];
+	try {
+		const parsed: unknown = JSON.parse(raw);
+		if (!Array.isArray(parsed)) return [];
+		return parsed.filter((item): item is AgentMemorySource => Boolean(item && typeof item === "object" && typeof (item as AgentMemorySource).dir === "string" && typeof (item as AgentMemorySource).backend === "string"));
+	} catch {
+		return [];
+	}
+}
+
 /** ACP `session/new` / `session/load` 的 mcpServers 项（ACP v1 只有 stdio 形态）。 */
 export function buildAcpMcpServers(mount: AgentMemoryMount): AcpMcpServer[] {
 	return [{ name: AGENT_MEMORY_SERVER_NAME, command: mount.command, args: mount.args, env: mount.env }];

@@ -345,6 +345,18 @@ const SETTINGS_ROW_ANCHORS = [
 	},
 	{
 		tab: "common",
+		slug: "common-agent-memory-auto-learn",
+		labelKey: "settings.agentMemoryAutoLearn",
+		keywords: ["自动学习", "记忆学习循环", "auto learn", "memory learning", "提炼记忆", "模型提炼"],
+	},
+	{
+		tab: "common",
+		slug: "common-agent-memory-status",
+		labelKey: "settings.agentMemoryStatus",
+		keywords: ["记忆状态", "导出记忆", "导入记忆", "memory export", "memory import", "清空索引", "设备"],
+	},
+	{
+		tab: "common",
 		slug: "common-cua-enabled",
 		labelKey: "settings.cuaEnabled",
 		keywords: ["cua", "桌面操作", "电脑操作", "模拟点击", "desktop automation"],

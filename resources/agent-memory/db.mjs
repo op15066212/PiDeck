@@ -192,7 +192,7 @@ function sanitizeFtsQuery(query) {
  * 在记忆条目里检索。
  * @returns {{ ok: true, hits: Array<{content: string, target: string, scope: string, projectId: string, score: number}> } | { ok: false, reason: string }}
  */
-export function searchEntries(root, query, { limit = 10, targets = ["memory", "user", "standing", "failure", "project"], projectId = "" } = {}) {
+export function searchEntries(root, query, { limit = 10, targets = ["memory", "user", "standing", "failure", "project"], projectId = "", deviceProjectId = "" } = {}) {
 	const handle = openDatabase(root);
 	if (!handle.db) return { ok: false, reason: "index-unavailable" };
 	const db = handle.db;
@@ -203,7 +203,10 @@ export function searchEntries(root, query, { limit = 10, targets = ["memory", "u
 		const key = `${row.target}|${row.scope}|${row.projectId}|${row.content}`;
 		if (seen.has(key)) return;
 		seen.add(key);
-		hits.push({ content: String(row.content), target: String(row.target), scope: String(row.scope), projectId: String(row.projectId ?? ""), score });
+		// 设备作用域在库里就是 project_id = `device:<key>`，回给调用方时单独标出来：
+		// 「本机专属」与「这个项目的」语义不同，混成 project 会让模型误以为能跨机器复用。
+		const project = String(row.projectId ?? "");
+		hits.push({ content: String(row.content), target: String(row.target), scope: project.startsWith("device:") ? "device" : String(row.scope), projectId: project, score });
 	};
 
 	const ftsQuery = sanitizeFtsQuery(query);
@@ -215,10 +218,10 @@ export function searchEntries(root, query, { limit = 10, targets = ["memory", "u
 					`SELECT e.target, e.scope, e.project_id AS projectId, e.content, bm25(entries_fts) AS score
 					 FROM entries_fts JOIN entries e ON e.id = entries_fts.rowid
 					 WHERE entries_fts MATCH ?
-					   AND (e.target IN (${targetFilter.map(() => "?").join(",")}) OR (? <> '' AND e.project_id = ?))
+					   AND (e.target IN (${targetFilter.map(() => "?").join(",")}) OR (? <> '' AND e.project_id = ?) OR (? <> '' AND e.project_id = ?))
 					 ORDER BY score ASC LIMIT ?`,
 				)
-				.all(ftsQuery, ...targetFilter, projectId, projectId, limit * 4);
+				.all(ftsQuery, ...targetFilter, projectId, projectId, deviceProjectId, deviceProjectId, limit * 4);
 			for (const row of rows) push(row, Number(row.score));
 		} catch {
 			// FTS 查询语法失败时静默退到 LIKE：检索不可用不等于工具报错。
@@ -231,10 +234,10 @@ export function searchEntries(root, query, { limit = 10, targets = ["memory", "u
 		const rows = db
 			.prepare(
 				`SELECT target, scope, project_id AS projectId, content FROM entries
-				 WHERE content LIKE ? ESCAPE '\\' AND (target IN (${targetFilter.map(() => "?").join(",")}) OR (? <> '' AND project_id = ?))
+				 WHERE content LIKE ? ESCAPE '\\' AND (target IN (${targetFilter.map(() => "?").join(",")}) OR (? <> '' AND project_id = ?) OR (? <> '' AND project_id = ?))
 				 ORDER BY LENGTH(content) ASC LIMIT ?`,
 			)
-			.all(pattern, ...targetFilter, projectId, projectId, limit * 4);
+			.all(pattern, ...targetFilter, projectId, projectId, deviceProjectId, deviceProjectId, limit * 4);
 		for (const row of rows) push(row, 1);
 	} catch {
 		// 同上：检索降级不阻断写入与读取。
@@ -373,6 +376,59 @@ export function pruneSessions(root, maxSessions) {
 }
 
 /** 索引统计（注入/自检用）。 */
+/**
+ * 清空索引（不碰 Markdown 真值）。
+ *
+ * 用 DELETE 而不是删库文件：宿主进程与 MCP 服务器可能同时开着这个库，
+ * Windows 上删一个被打开的文件会直接失败。清空后下一次检索会自动重灌，
+ * 所以这个操作随时可逆（代价是一次重建）。
+ */
+export function clearIndex(root) {
+	const handle = openDatabase(root);
+	if (!handle.db) return { ok: false, reason: handle.disabled ?? "index-unavailable" };
+	const db = handle.db;
+	let removed = 0;
+	for (const table of ["entries", "sessions", "session_files", "messages", "entries_fts", "messages_fts"]) {
+		const count = Number(db.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get()?.count ?? 0);
+		db.exec(`DELETE FROM ${table}`);
+		removed += count;
+	}
+	// 让 AUTOINCREMENT 归零，重建后 rowid 从 1 开始（FTS 行号与新表对齐更直观）。
+	db.exec("DELETE FROM sqlite_sequence WHERE name IN ('entries', 'messages')");
+	// VACUUM 需要独占，可能被另一进程的写事务挡住：失败只是没缩小文件，不该让清空失败。
+	try {
+		db.exec("VACUUM");
+	} catch {
+		// 忽略
+	}
+	return { ok: true, removed };
+}
+
+/**
+ * 取某会话最近的若干条消息（学习循环的输入源）。
+ *
+ * 为什么走索引而不是重读会话文件：学习循环由宿主在「回合结算」时触发，三种后端的
+ * 原始格式各不相同（pi JSONL / ACP 归档 JSON），索引层已经把三者归一成同一张 messages
+ * 表；宿主只需要一个会话 id。ORDER BY rowid DESC 再翻转，保证拿到的是最后 N 条。
+ */
+export function sessionMessages(root, sessionId, { limit = 40 } = {}) {
+	const handle = openDatabase(root);
+	if (!handle.db) return { ok: false, reason: "index-unavailable", messages: [], userTurns: 0 };
+	try {
+		const rows = handle.db.prepare("SELECT role, content, ts FROM messages WHERE session_id = ? ORDER BY rowid DESC LIMIT ?").all(sessionId, limit) ?? [];
+		// userTurns 必须是**整个会话**的用户回合数，不能只看这次的窗口：学习进度记的是水位线，
+		// 用窗口长度当水位会让窗口满了之后永远学不到下一轮。
+		const turns = Number(handle.db.prepare("SELECT COUNT(*) AS count FROM messages WHERE session_id = ? AND role = 'user'").get(sessionId)?.count ?? 0);
+		return {
+			ok: true,
+			userTurns: turns,
+			messages: rows.reverse().map((row) => ({ role: String(row.role), content: String(row.content), timestamp: String(row.ts ?? "") })),
+		};
+	} catch (error) {
+		return { ok: false, reason: error instanceof Error ? error.message : String(error), messages: [], userTurns: 0 };
+	}
+}
+
 export function indexStats(root) {
 	const handle = openDatabase(root);
 	if (!handle.db) return { ok: false, reason: "index-unavailable" };

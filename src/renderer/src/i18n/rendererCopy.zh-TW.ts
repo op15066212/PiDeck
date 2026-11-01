@@ -2,7 +2,7 @@
  * 本文件由 `node scripts/genZhTwCopy.mjs` 生成，请勿手改。
  * 文案改动请修改对应的 zh-CN 源文件后重新生成；转换规则见该脚本的 OVERRIDES。
  * 注释刻意保留简体：属于开发者视角文本，不面向用户。
- * source-sha256: f17a39dd5220160e27220cdd393e35d67f392d5f099f75b6b3229ce15bd16a76（来自 src/renderer/src/i18n/rendererCopy.zh-CN.ts 的词典区块指纹，由 tests/zhTwCopy.test.mjs 校验新鲜度）
+ * source-sha256: 59686722371577e1b1447af5ba095afdb456627c26753b53188ab982b9d84d90（来自 src/renderer/src/i18n/rendererCopy.zh-CN.ts 的词典区块指纹，由 tests/zhTwCopy.test.mjs 校验新鲜度）
  */
 import { mainProcessZhTW } from "../../../shared/i18n/mainProcessCopy.zh-TW";
 import type { TranslationKey } from "./rendererCopy.zh-CN";
@@ -5503,9 +5503,31 @@ export const zhTW: Record<TranslationKey, string> = {
 	"settings.floatingBallExpandCompact": "小任務模式",
 	"settings.cuaSectionDesc": "允許 Agent 觀察螢幕並注入滑鼠/鍵盤輸入，從而操作桌面原生應用。CUA 預設關閉，自動審批預設開啟；可關閉自動審批以逐次確認寫操作。",
 	"settings.agentMemorySection": "智慧體記憶",
-	"settings.agentMemorySectionDesc": "跨 pi / DSH / ACP 共享的長期記憶。Markdown 檔案是真值（使用者資料目錄下的 agent-memory），檢索走本地全文索引。開啟後 PiDeck 把 pideck-agent-memory 寫進 pi 的 mcp.json，並掛給 ACP 會話；關閉只刪這一項，不改動你的其它伺服器配置。",
+	"settings.agentMemorySectionDesc": "跨 pi / DSH / ACP 共享的長期記憶。Markdown 檔案是真值（使用者資料目錄下的 memory/），檢索走本地全文索引。開啟後 PiDeck 把 pideck-agent-memory 寫進 pi 的 mcp.json，並掛給 ACP 會話；關閉只刪這一項，不改動你的其它伺服器配置。",
 	"settings.agentMemoryEnabled": "啟用智慧體記憶",
 	"settings.agentMemoryEnabledDesc": "開啟後 Agent 才能用 memory_add / memory_replace / memory_remove / memory_search / memory_get / session_search / memory_status。只對新會話生效；關閉不會刪除已儲存的記憶檔案。",
+	"settings.agentMemoryAutoLearn": "自動學習記憶",
+	"settings.agentMemoryAutoLearnDesc": "每 12 輪對話後讓模型從最近的會話裡提煉最多 3 條記憶（用提示詞增強的模型，可用增強模型設定另行指定；單次會話不會重複提煉）。會產生模型呼叫費用，預設關閉。",
+	"settings.agentMemoryStatus": "記憶狀態",
+	"settings.agentMemorySummaryFiles": "{size} / {count} 條",
+	"settings.agentMemorySummaryIndex": "索引 {sessions} 個會話 · {messages} 條訊息",
+	"settings.agentMemoryIndexUnavailable": "索引未啟用",
+	"settings.agentMemorySummaryDevice": "本機：{device}",
+	"settings.agentMemoryExport": "匯出",
+	"settings.agentMemoryImport": "匯入",
+	"settings.agentMemoryClearIndex": "清空索引",
+	"settings.agentMemoryExportDone": "已匯出 {count} 條記憶。",
+	"settings.agentMemoryImportDone": "從「{device}」匯入：新增 {added} 條，重複 {duplicate} 條，按刪除記錄跳過 {tombstoned} 條。",
+	"settings.agentMemoryClearDone": "索引已清空（{count} 行），下次檢索會自動重建。",
+	"settings.agentMemoryClearConfirm": "清空本地索引？記憶檔案不受影響，但下一次檢索需要重建索引（大會話庫約幾秒）。",
+	"settings.agentMemoryIndexDegraded": "索引未啟用：{reason}。記憶仍可讀寫，但檢索會退化為檔案內子串掃描。",
+	"settings.agentMemoryUnknownDevice": "未知裝置",
+	"settings.agentMemoryErrorBundleInvalid": "這個檔案不是 PiDeck 記憶包。",
+	"settings.agentMemoryErrorBundleFormat": "格式標識不匹配，不是 PiDeck 記憶包。",
+	"settings.agentMemoryErrorBundleVersion": "記憶包版本比當前 PiDeck 新，請先升級再匯入。",
+	"settings.agentMemoryErrorBundleTooLarge": "檔案過大，不像是記憶包。",
+	"settings.agentMemoryErrorIndexUnavailable": "索引層不可用（缺少 node:sqlite 或索引庫損壞）。",
+	"settings.agentMemoryErrorFailed": "操作失敗，詳情見日誌。",
 	"settings.cuaEnabled": "啟用 CUA 桌面操作",
 	"settings.cuaEnabledDesc": "開啟後在本地起一個僅迴環可達的 MCP 端點並註冊給 Pi；關閉時不監聽、不改動 Pi 配置。真實輸入始終受全域/會話殺開關保護，關閉自動審批後每次寫操作需確認。",
 	"settings.cuaAutoApprove": "CUA 免審批（自動放行）",

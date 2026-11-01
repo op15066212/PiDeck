@@ -46,7 +46,7 @@ const TOOL_DEFINITIONS = [
 		inputSchema: {
 			type: "object",
 			properties: {
-				target: { type: "string", enum: ["memory", "user", "project", "failure"], description: "memory=global notes, user=who the user is, project=this project only, failure=lesson learned" },
+				target: { type: "string", enum: ["memory", "user", "project", "failure", "device"], description: "memory=global notes, user=who the user is, project=this project only, failure=lesson learned, device=only true on this machine (drive letters, local paths)" },
 				content: { type: "string", description: "One self-contained fact. Several sentences are fine; several unrelated facts are not." },
 				category: { type: "string", enum: ["failure", "correction", "insight", "preference", "convention", "tool-quirk"], description: "Only for target=failure." },
 				projectId: { type: "string", description: "Optional. Defaults to the current session's project (derived from its working directory); pass explicitly only to target another project." },
@@ -60,7 +60,7 @@ const TOOL_DEFINITIONS = [
 		inputSchema: {
 			type: "object",
 			properties: {
-				target: { type: "string", enum: ["memory", "user", "project", "failure"] },
+				target: { type: "string", enum: ["memory", "user", "project", "failure", "device"] },
 				oldContent: { type: "string", description: "Existing entry, or a substring that matches exactly one entry." },
 				content: { type: "string", description: "Replacement content." },
 				projectId: { type: "string" },
@@ -74,7 +74,7 @@ const TOOL_DEFINITIONS = [
 		inputSchema: {
 			type: "object",
 			properties: {
-				target: { type: "string", enum: ["memory", "user", "project", "failure"] },
+				target: { type: "string", enum: ["memory", "user", "project", "failure", "device"] },
 				content: { type: "string", description: "Existing entry, or a substring that matches exactly one entry." },
 				projectId: { type: "string" },
 			},
@@ -88,7 +88,7 @@ const TOOL_DEFINITIONS = [
 			type: "object",
 			properties: {
 				query: { type: "string" },
-				target: { type: "string", enum: ["memory", "user", "project", "failure"], description: "Optional: restrict to one target." },
+				target: { type: "string", enum: ["memory", "user", "project", "failure", "device"], description: "Optional: restrict to one target." },
 				projectId: { type: "string" },
 				limit: { type: "integer", minimum: 1, maximum: 50 },
 			},
@@ -101,7 +101,7 @@ const TOOL_DEFINITIONS = [
 		inputSchema: {
 			type: "object",
 			properties: {
-				target: { type: "string", enum: ["memory", "user", "project", "failure"] },
+				target: { type: "string", enum: ["memory", "user", "project", "failure", "device"] },
 				projectId: { type: "string" },
 				offset: { type: "integer", minimum: 0 },
 				limit: { type: "integer", minimum: 1, maximum: 200 },

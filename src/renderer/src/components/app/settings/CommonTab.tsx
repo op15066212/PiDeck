@@ -16,6 +16,7 @@ import { SettingApplyBadge, DirtyMarker, SettingBox, SettingRow, SettingSwitchRo
 import { VoiceTranscriptionSettingsSection } from "./VoiceTranscriptionSettingsSection";
 import { QuickTaskMenuSetting } from "./QuickTaskMenuSetting";
 import { QuickMessagesSetting } from "./QuickMessagesSetting";
+import { AgentMemorySettingsSection } from "./AgentMemorySettingsSection";
 import { ReplyActionsSetting } from "./ReplyActionsSetting";
 
 type CommonTabProps = {
@@ -517,9 +518,21 @@ export const CommonTab = memo(function CommonTab(props: CommonTabProps) {
 			</SettingsSection>
 
 			{/* 智能体记忆：默认关闭。开启后把 pideck-agent-memory 写进 pi 的 mcp.json 并挂给 ACP 会话，
-          让三种后端共用一份 Markdown 记忆（<userData>/agent-memory）与会话检索。 */}
+          让三种后端共用一份 Markdown 记忆（<userData>/memory）与会话检索。 */}
 			<SettingsSection id="settings-section-common-agent-memory" title={t("settings.agentMemorySection")} description={t("settings.agentMemorySectionDesc")}>
 				<SettingSwitchRow anchor="common-agent-memory-enabled" title={t("settings.agentMemoryEnabled")} description={t("settings.agentMemoryEnabledDesc")} checked={draft.agentMemoryEnabled ?? false} dirty={isDirty("agentMemoryEnabled")} onChange={(checked) => updateDraft({ agentMemoryEnabled: checked })} />
+				{/* 自动学习：会真的调模型（花钱），默认关；依赖上面的启用开关，未启用时置灰。 */}
+				<SettingSwitchRow
+					anchor="common-agent-memory-auto-learn"
+					title={t("settings.agentMemoryAutoLearn")}
+					description={t("settings.agentMemoryAutoLearnDesc")}
+					checked={draft.agentMemoryAutoLearnEnabled ?? false}
+					disabled={!(draft.agentMemoryEnabled ?? false)}
+					dirty={isDirty("agentMemoryAutoLearnEnabled")}
+					onChange={(checked) => updateDraft({ agentMemoryAutoLearnEnabled: checked })}
+				/>
+				{/* 状态/导出/导入/清空索引：开关下面的操作行，不参与 draft 保存 */}
+				<AgentMemorySettingsSection />
 			</SettingsSection>
 
 			{/* 文件资源管理器集成：注册「用 PiDeck 打开」右键菜单（目录与空白处），

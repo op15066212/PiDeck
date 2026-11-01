@@ -319,8 +319,13 @@ import { PiModelCapabilityCache, watchPiConfigDirectory } from "./pi/PiModelCapa
 import { isDefaultAgentTitle } from "./pi/agentUtils";
 import { CompositeAgentGateway } from "./agents/CompositeAgentGateway";
 import { AcpAgentManager } from "./acp/AcpAgentManager";
-import { buildAcpMcpServers, buildAgentMemoryMountForApp } from "./agentMemory/agentMemoryMounts";
+import { buildAcpMcpServers, buildAgentMemoryMountForApp, memoryDirOfMount, resolveAgentMemoryDir, sourcesOfMount } from "./agentMemory/agentMemoryMounts";
+import { runLearnerPass } from "./agentMemory/agentMemoryLearner";
+import { resolveEnhanceTargetModel } from "../shared/enhanceModelPreference";
 import { syncAgentMemoryRegistration } from "./agentMemory/AgentMemoryMcpRegistration";
+import { clearAgentMemoryIndex, readAgentMemoryStatus } from "./agentMemory/agentMemoryStatus";
+import { exportAgentMemoryBundle, importAgentMemoryBundle } from "./agentMemory/agentMemoryBundle";
+import { registerAgentMemoryIpc } from "./ipc/agentMemoryIpc";
 import { AcpSessionArchive } from "./acp/AcpSessionArchive";
 import { createAcpModelRateAnnotator } from "./acp/acpModelRates";
 import { withAcpConfigDefault } from "./acp/acpToolConfig";
@@ -845,6 +850,11 @@ let promptSuggestionService: EnhancePromptService | null = null;
  * 让划词翻译把用户正在跑的输入框增强打断（见 AGENTS.md 例外四）。
  */
 let agentInvokeCompletionService: EnhancePromptService | null = null;
+/**
+ * 记忆学习循环专用侧车实例。同样的单飞语义理由：与提示词增强/输入预测共用实例，
+ * 学习跑一次就会把用户正在用的增强打断（学习是后台行为，用户看不见它为什么卡住）。
+ */
+let agentMemoryLearnService: EnhancePromptService | null = null;
 /** 系统级划词浮窗（全局快捷键触发的独立 BrowserWindow）；null = 尚未装配/装配失败。 */
 let selectionToolWindow: SelectionToolWindow | null = null;
 /** 系统级划词服务：取词、浮窗展示与全局快捷键注册的唯一归属地。 */
@@ -1550,6 +1560,38 @@ function resolveSessionExportDir(): string {
  * pi 走 ~/.pi/agent/mcp.json（pi 0.99 内置 MCP 只认这个文件），ACP 走 session/new 的 mcpServers。
  * 传 cwd 时会话就带上项目作用域键，三种后端因此共享同一份项目记忆。
  */
+/**
+ * 学习循环的一次性补全：与增强/预测同一条通道（同一份侧车协议），但用独立实例。
+ *
+ * 模型优先级复用增强那一套解析：用户显式指定的增强模型 > 该会话记录的模型。
+ * 都没有就拒绝——学习是可选增益，不能为了它去猜一个模型或退回某个默认供应商。
+ */
+function memoryLearnComplete(sessionId: string, input: { systemPrompt: string; text: string }): Promise<string> {
+	const service = agentMemoryLearnService;
+	if (!service) return Promise.reject(new Error("learn-service-unavailable"));
+	const record = sessionCatalog?.get(sessionId)?.model;
+	const target = resolveEnhanceTargetModel({
+		configured: settingsStore?.get().enhanceModel ?? null,
+		recordModel: record ? { provider: record.provider, modelId: record.modelId } : undefined,
+	});
+	if (!target) return Promise.reject(new Error("learn-model-unavailable"));
+	return new Promise<string>((resolve, reject) => {
+		void service
+			.enhance(
+				{ provider: target.provider, modelId: target.modelId, userText: input.text, systemPrompt: input.systemPrompt },
+				{
+					onDelta: () => undefined,
+					onDone: (text) => resolve(text),
+					onAborted: () => reject(new Error("learn-aborted")),
+					onError: (errorKind, message) => reject(new Error(`learn-${errorKind}: ${message}`)),
+				},
+			)
+			.then((accepted) => {
+				if (!accepted.ok) reject(new Error(`learn-${accepted.errorKind}`));
+			});
+	});
+}
+
 function createAgentMemoryMount(cwd?: string) {
 	return buildAgentMemoryMountForApp({
 		userData: app.getPath("userData"),
@@ -3317,7 +3359,7 @@ function resolveBuiltInExtensionRoots(): BuiltInExtensionPathRoots {
  * 一个独立进程（EnhancePromptService 的单飞语义是「新 run 打断旧 run」，共用实例会互相打断）。
  * resolveLaunch 现求值：用户改自定义 pi 路径后下次调用即生效，无需重启。
  */
-function createCompletionHelperService(namespace: "enhance" | "agent-invoke" | "suggest"): EnhancePromptService {
+function createCompletionHelperService(namespace: "enhance" | "agent-invoke" | "suggest" | "agent-memory"): EnhancePromptService {
 	const log = (level: "debug" | "info" | "warn" | "error", message: string) => void appLogger?.[level](namespace, message);
 	return new EnhancePromptService({
 		// 侧车是常驻单进程，env 在 spawn 时固定，所以代理只能在这里落地：
@@ -3863,6 +3905,20 @@ function registerIpc() {
 	quitCleanup.register("pideck-mcp", async () => {
 		unregisterPiDeckMcp();
 		await piDeckMcp.dispose();
+	});
+	// 智能体记忆的设置页视图：状态/清空索引/导出/导入。记忆根目录与 MCP 服务器用的是同一个
+	// （userData/memory），所以这里算出来的体积与索引规模就是 Agent 侧看到的真实值。
+	const agentMemoryRoot = () => resolveAgentMemoryDir(app.getPath("userData"));
+	const unregisterAgentMemoryIpc = registerAgentMemoryIpc({
+		getWindow: () => mainWindow,
+		readStatus: () => readAgentMemoryStatus(agentMemoryRoot()),
+		clearIndex: () => clearAgentMemoryIndex(agentMemoryRoot()),
+		exportBundle: () => exportAgentMemoryBundle({ root: agentMemoryRoot(), getWindow: () => mainWindow }),
+		importBundle: ({ filePath }) => importAgentMemoryBundle({ root: agentMemoryRoot(), getWindow: () => mainWindow, filePath }),
+		warn: mcpWarning,
+	});
+	quitCleanup.register("agent-memory-ipc", () => {
+		unregisterAgentMemoryIpc();
 	});
 	quitCleanup.register("host-plugins", () => {
 		unregisterHostPlugins();
@@ -5417,6 +5473,10 @@ app
 		// 输入预测：与增强同协议、独立进程；启动期只装配，首次预测才拉起侧车。
 		promptSuggestionService = createCompletionHelperService("suggest");
 		quitCleanup.register("prompt-suggestion", () => promptSuggestionService?.dispose());
+		// 记忆学习循环：只在用户开启开关后才会被调用（见 registerIpc 里的回合结算钩子），
+		// 这里只装配实例——侧车进程仍然是首次真正需要时才拉起。
+		agentMemoryLearnService = createCompletionHelperService("agent-memory");
+		quitCleanup.register("agent-memory-learn", () => agentMemoryLearnService?.dispose());
 		// DSH 用量链路（backend="dsh"）：配置落 $DSH_HOME/usage-probes.json、凭据从
 		// $DSH_HOME/.credentials.yaml 读，与 pi 侧链路（~/.pi/agent）完全同构、互不干扰。
 		// DSH_HOME 解析与 DshHost 同一套（设置覆盖 > ~/.dsh > 应用私有目录），getter 每次求值，
@@ -7103,6 +7163,31 @@ app
 			const tab = compositeAgentGateway?.list().find((candidate) => candidate.id === info.agentId);
 			if (!tab || (tab.backend ?? "pi") === "pi") return;
 			notifySessionFinished(agentToastDeps(), { agentId: info.agentId, title: info.title, ...(tab.deckSessionId ? { sessionId: tab.deckSessionId } : {}) });
+		});
+		// 记忆学习循环：回合结算后按阈值尝试一次提炼（三后端统一走这里）。
+		// 与上面的完成通知不同，pi 会话也要参与——记忆是跨后端的同一份数据。
+		// 学习本身是可选增益：任何失败都只进日志，绝不让它反过来影响会话。
+		compositeAgentGateway.onAgentSettled((info) => {
+			const settings = settingsStore?.get();
+			if (!settings?.agentMemoryEnabled || !settings.agentMemoryAutoLearnEnabled) return;
+			const tab = compositeAgentGateway?.list().find((candidate) => candidate.id === info.agentId);
+			const sessionId = tab?.deckSessionId;
+			if (!sessionId) return;
+			const mount = createAgentMemoryMount(tab?.cwd);
+			void runLearnerPass(
+				{
+					root: memoryDirOfMount(mount),
+					sources: sourcesOfMount(mount),
+					complete: (input) => memoryLearnComplete(sessionId, input),
+					logger: {
+						info: (channel, message, meta) => void appLogger.info(channel, message, meta),
+						warn: (channel, message, meta) => void appLogger.warn(channel, message, meta),
+					},
+				},
+				{ sessionId, projectId: tab?.projectId ?? "" },
+			).catch((error: unknown) => {
+				void appLogger.warn("agent-memory", "learn pass crashed", { error: error instanceof Error ? error.message : String(error) });
+			});
 		});
 		// 项目位置注入给会话协调器：远端会话在 pi 上报会话文件之前没有 ssh 身份，"这条会话的 runtime
 		// 在哪台机器上"只能由项目 locator 回答（AgentManager 也按它路由 runtime）。位置真相同的单一

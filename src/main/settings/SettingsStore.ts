@@ -317,6 +317,8 @@ Gitmoji 对应关系：
 
 	// 智能体记忆默认关闭：关闭时不注册 MCP 服务器、不改动 pi 的 mcp.json（与现状一致）
 	agentMemoryEnabled: false,
+	// 学习循环默认关：开启后回合结算会调模型提炼记忆，属于会花钱的行为。
+	agentMemoryAutoLearnEnabled: false,
 
 	// 浏览器 Agent 默认关闭：不注册 browser_* 工具，端点是否监听取决于 CUA 是否已开启。
 	// 开启后写动作默认免审批（与 CUA 一致）；关闭自动审批后逐次确认。
@@ -890,6 +892,9 @@ export class SettingsStore {
 		// 智能体记忆开关来自渲染层，入参不可信：只接受布尔值，非法值保持原设置。
 		if ("agentMemoryEnabled" in safePatch && typeof safePatch.agentMemoryEnabled !== "boolean") {
 			delete safePatch.agentMemoryEnabled;
+		}
+		if ("agentMemoryAutoLearnEnabled" in safePatch && typeof safePatch.agentMemoryAutoLearnEnabled !== "boolean") {
+			delete safePatch.agentMemoryAutoLearnEnabled;
 		}
 		if ("navigationMode" in safePatch && safePatch.navigationMode !== "tabs" && safePatch.navigationMode !== "simple") {
 			delete safePatch.navigationMode;

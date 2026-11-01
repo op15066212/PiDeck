@@ -38,7 +38,10 @@ export function loadTsCommonJs(filePath, options = {}) {
 				esModuleInterop: true,
 				jsx: ts.JsxEmit.ReactJSX,
 			},
-			fileName: absolutePath,
+			// `.mjs` 文件被 TS 当作 ESM，transpileModule 会保留 import 语句，vm 里就不是
+			// 模块而直接 SyntaxError。按 .ts 命名才能强制降级成 CommonJS（生产由打包器
+			// 处理，这里只为测试能同步 require 生产依赖图）。
+			fileName: /\.mjs$/i.test(absolutePath) ? absolutePath.replace(/\.mjs$/i, ".ts") : absolutePath,
 		}).outputText;
 		const module = { exports: {} };
 		cache.set(absolutePath, module);

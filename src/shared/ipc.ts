@@ -1124,6 +1124,15 @@ export const ipcChannels = {
 	piDeckMcpState: "pideck-mcp:state",
 	piDeckMcpSetAccess: "pideck-mcp:set-access",
 	piDeckMcpConnection: "pideck-mcp:connection",
+	// ===== 智能体记忆（pideck-agent-memory）的设置页视图 =====
+	/** 记忆文件体积 + 索引规模 + 本机设备档案；只读 */
+	agentMemoryStatus: "agent-memory:status",
+	/** 清空会话/记忆索引（Markdown 真值不动，下次检索自动重建） */
+	agentMemoryClearIndex: "agent-memory:clear-index",
+	/** 导出记忆包（弹保存对话框；只含全局与项目作用域） */
+	agentMemoryExport: "agent-memory:export",
+	/** 导入记忆包（弹打开对话框；按内容去重合并，墓碑优先） */
+	agentMemoryImport: "agent-memory:import",
 	hostPluginsList: "host-plugins:list",
 	hostPluginsRescan: "host-plugins:rescan",
 	hostPluginsInstall: "host-plugins:install",
