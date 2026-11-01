@@ -1,5 +1,5 @@
 {
-	"count": 140,
+	"count": 138,
 	"entries": [
 		"src/renderer/src/ConfigModal.tsx :: <div className=\"grid max-h-56 gap-1.5 overflow-auto text-left\">",
 		"src/renderer/src/ConfigModal.tsx :: className=\"config-sidebar flex min-h-0 shrink-0 flex-col items-stretch gap-2.5 overflow-auto border-0 border-r border-border rounded-none bg-transparent p-2.5 d",
