@@ -6372,6 +6372,7 @@ export const zhTW: Record<TranslationKey, string> = {
 	"timeline.loadMoreTurns": "載入更多對話",
 	"timeline.loadMoreFailed": "更早的歷史載入失敗",
 	"timeline.loadMoreFailedHint": "可能是會話檔案或 DSH host 暫時不可用；按鈕可再點重試。",
+	"timeline.loadMoreRetryable": "會話在翻頁期間有新內容，再點一次即可",
 	"drawer.lazyLoading": "載入中…",
 	"drawer.loadFailed": "目錄讀取失敗",
 	"diagnostic.errorTitle": "錯誤診斷",

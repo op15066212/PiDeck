@@ -6365,6 +6365,7 @@ export const zhCN = {
 	"timeline.loadMoreTurns": "加载更多对话",
 	"timeline.loadMoreFailed": "更早的历史加载失败",
 	"timeline.loadMoreFailedHint": "可能是会话文件或 DSH host 暂时不可用；按钮可再点重试。",
+	"timeline.loadMoreRetryable": "会话在翻页期间有新内容，再点一次即可",
 	"drawer.lazyLoading": "加载中…",
 	"drawer.loadFailed": "目录读取失败",
 	"diagnostic.errorTitle": "错误诊断",

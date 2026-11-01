@@ -6389,6 +6389,7 @@ export const enUS: Record<TranslationKey, string> = {
 	"timeline.loadMoreTurns": "Load more conversations",
 	"timeline.loadMoreFailed": "Failed to load earlier history",
 	"timeline.loadMoreFailedHint": "The session file or DSH host may be temporarily unavailable. Click the button to retry.",
+	"timeline.loadMoreRetryable": "New messages arrived while loading. Click the button again.",
 	"drawer.lazyLoading": "Loading…",
 	"drawer.loadFailed": "Failed to load directory",
 	"diagnostic.errorTitle": "Error diagnostics",

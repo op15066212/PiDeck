@@ -1486,6 +1486,12 @@ export function useSessionTimelineController(options: { sessionId?: string; mess
 								const growth = resolvePageWindowGrowth(page.messages);
 								if (growth > 0) expandWindowBatched(growth);
 							}
+						} else {
+							// prepend 被拒（atom 的四个前置之一不成立）：最常见是翻页期间缓存被写入、
+							// revision 被抬高。此时游标 before 未变，再点一次即可重取同一页——不能报成
+							// 「加载失败」，那会把「可重试」说成「坏了」。
+							const revisionMoved = (cachedEntry?.revision ?? 0) !== expectedRevision;
+							setLoadMoreError(revisionMoved ? t("timeline.loadMoreRetryable") : t("timeline.loadMoreFailed"));
 						}
 					})
 					.catch((error: unknown) => {
@@ -1547,6 +1553,12 @@ export function useSessionTimelineController(options: { sessionId?: string; mess
 								const growth = resolvePageWindowGrowth(page.messages);
 								if (growth > 0) expandWindowBatched(growth);
 							}
+						} else {
+							// prepend 被拒（atom 的四个前置之一不成立）：最常见是翻页期间缓存被写入、
+							// revision 被抬高。此时游标 before 未变，再点一次即可重取同一页——不能报成
+							// 「加载失败」，那会把「可重试」说成「坏了」。
+							const revisionMoved = (cachedEntry?.revision ?? 0) !== expectedRevision;
+							setLoadMoreError(revisionMoved ? t("timeline.loadMoreRetryable") : t("timeline.loadMoreFailed"));
 						}
 					})
 					.catch((error: unknown) => {
