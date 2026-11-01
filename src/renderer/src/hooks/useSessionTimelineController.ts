@@ -33,7 +33,7 @@ import {
 import { clearTimelineRevealAtom, requestTimelineRevealAtom } from "../atoms/timeline-reveal-atoms";
 import type { MessageScrollerScrollApi } from "../components/agents/message-scroller";
 import { TURN_WINDOW_AUTO_EXPAND_THRESHOLD, resolveAutoExpandThreshold } from "./timeline/autoExpandThreshold";
-import { shouldAutoExpandRenderWindow, shouldApplyDelayedHistoryResult } from "./timeline/scrollHistoryPolicy";
+import { planLoadMorePinSteps, shouldAutoExpandRenderWindow, shouldApplyDelayedHistoryResult } from "./timeline/scrollHistoryPolicy";
 import { beginProgrammaticScroll, clearProgrammaticScroll, createProgrammaticScrollGuard, finishProgrammaticScrollFrame, isProgrammaticScrollActive } from "./timeline/programmaticScrollGuard";
 import { browsePinScrollTop, followBrowsePinAfterUserScroll, pickVisibleRootRow, resolvePinnedRowFallback, shouldCompensateBrowsePin, type BrowsePin } from "./timeline/browsePin";
 import { countUserTurns, TIMELINE_MOUNTED_TURN_LIMIT, TIMELINE_SCROLLED_TURN_LIMIT, TIMELINE_WINDOW_EXPAND_STEP } from "../components/session/timeline/turnRenderWindow";
@@ -1483,10 +1483,13 @@ export function useSessionTimelineController(options: { sessionId?: string; mess
 			const pageSize = resolveHistoryPageSize(source);
 			const requestOwnerKey = ownerKey;
 			const timeline = timelineRef.current;
-			// 按钮点击是显式请求：先脱离贴底跟随，再抓浏览钉行。顺序不能反——captureBrowsePin
-			// 在 autoScroll 为真时直接 return（:1230），贴底点按钮会一个钉行都抓不到。
-			if (source === "button") escapeAutoScroll();
-			if (source !== "backfill") captureBrowsePin(true);
+			// 前置动作的顺序是承重结构，写在 planLoadMorePinSteps 里并由单测钉住：
+			// captureBrowsePin 在 autoScrollRef 为真时直接 return（贴底态一直是真），所以必须
+			// 先脱离跟随再抓钉行，否则贴底点按钮一个钉行都抓不到。
+			for (const step of planLoadMorePinSteps(source)) {
+				if (step === "escapeFollow") escapeAutoScroll();
+				else captureBrowsePin(true);
+			}
 			// 同上：翻页会在顶部插入，期间必须能按行测到 pin（整表渲染）。
 			if (timeline && ownerKeyRef.current === requestOwnerKey) {
 				loadMoreAnchorRef.current = {

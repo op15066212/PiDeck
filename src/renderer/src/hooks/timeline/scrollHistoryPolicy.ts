@@ -57,3 +57,24 @@ export function shouldApplyDelayedHistoryResult(gate: DelayedHistoryResultGate):
 	if (gate.generationAtRequest !== gate.currentGeneration) return false;
 	return gate.explicit === true || !gate.following;
 }
+
+/** 发起翻页的来源。 */
+export type LoadMoreSource = "scroll" | "button" | "backfill";
+
+/** 翻页前要先做的动作。 */
+export type LoadMorePinStep = "escapeFollow" | "capturePin";
+
+/** 翻页前置动作序列，**数组顺序就是执行顺序**。
+ *
+ *  顺序是承重结构，不是风格问题：captureBrowsePin 首行在 autoScrollRef 为真时直接 return，
+ *  而贴底态这个值一直是真（引擎每帧上报 following）。所以必须先把 autoScroll 打掉再抓钉行，
+ *  否则贴底点「加载更多对话」一个钉行都抓不到；没有钉行，引擎的 following 上报又不会被忽略，
+ *  扩窗批次会被 consumeExpandBatch 首行清掉，界面逐字不变（2026-11 真机症状）。
+ *
+ *  反过来写（先 capture 再 escape）在静态检查与旧测试下全绿，功能却是坏的 —— 这类缺陷只能靠
+ *  把顺序变成数据、再用单测钉住，所以这个函数存在。 */
+export function planLoadMorePinSteps(source: LoadMoreSource): readonly LoadMorePinStep[] {
+	if (source === "button") return ["escapeFollow", "capturePin"];
+	if (source === "scroll") return ["capturePin"];
+	return [];
+}
