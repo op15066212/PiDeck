@@ -162,6 +162,7 @@ function RunningBody({ flow, state }: { flow: ReturnType<typeof useProviderLogin
 					{!state.prompt && <p className="text-xs text-muted-foreground">{t("providerLogin.running.proxyHint")}</p>}
 				</div>
 			)}
+			{/* scroll-ok: transient —— 登录流程的事件日志，生命周期等于一次弹窗、条数由 pi 的几步事件决定（几十条）。 */}
 			{logEvents.length > 0 && (
 				<div className="max-h-40 space-y-1 overflow-y-auto rounded-lg bg-muted/40 p-3">
 					{logEvents.map((event, index) => (

@@ -109,6 +109,11 @@ function scan(options = {}) {
 		}
 		for (let i = 0; i < lines.length; i += 1) {
 			const line = lines[i];
+			// 变量声明不是元素：`const scrollClass = "overflow-auto"` 曾被当成滚动容器，
+			// 于是真正那一行（类名取自变量、行内没有 overflow-* 字面量）反而扫不到，
+			// 基线上留了一条假指纹。只跳过「不含 < 的声明行」——单行 JSX
+			// （`const X = () => <div className="overflow-y-auto" />`）里的容器仍然要扫到。
+			if (/^\s*(?:const|let|var)\s/.test(line) && !line.includes("<")) continue;
 			if (!CONTAINER_RE.test(line)) continue;
 			if (isCommentLine(line)) continue;
 			const lineNo = i + 1;
