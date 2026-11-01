@@ -32,7 +32,17 @@ const SOURCE_READ = [/readFileSync\(\s*["'`]src\//, /readFileSync\(\s*`\$\{root\
 const SOURCE_ROOT_DECL = /\b(?:const|let)\s+\w*(?:root|Root|SRC|src)\w*\s*=\s*["'`]src\//;
 // 说明：`loadTsCommonJs(MODULE)`（路径先存常量再传入）同样是运行时加载真模块，
 // 但字面量正则识别不到，会被误判成 sourceOnly（changelogSections / rendererVirtualization 就是如此）。
-const RUNTIME_LOAD = [/loadTsCommonJs\(\s*["'`]src\//, /loadTsCommonJs\(\s*[A-Za-z_$][\w$]*\s*[,)]/, /from\s+["'`]\.\.\/src\//, /await\s+import\(\s*["'`]\.\.\/src\//, /require\(\s*["'`]\.\.\/src\//];
+const RUNTIME_LOAD = [
+	/loadTsCommonJs\(\s*["'\`]src\//,
+	/loadTsCommonJs\(\s*[A-Za-z_$][\w$]*\s*[,)]/,
+	/from\s+["'\`]\.\.\/src\//,
+	/await\s+import\(\s*["'\`]\.\.\/src\//,
+	/require\(\s*["'\`]\.\.\/src\//,
+	// 任意 helper 用 src/… 路径加载生产模块都算运行时加载：createTsSandbox 的用法
+	// （const load = createTsSandbox(); load("src/…")）就是把生产 TS 编译后放进 vm 执行，
+	// 运行时断言一条不少，只是多了 stub 依赖。2026-11 曾被判成 sourceOnly —— 那是判据缺项。
+	/\b\w*[Ll]oad\w*\(\s*["'\`]src\/[^"'\`]*\.[cm]?ts["'\`]/,
+];
 
 function collectTests(dir, out = []) {
 	if (!existsSync(dir)) return out;
