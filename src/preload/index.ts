@@ -274,6 +274,8 @@ const agentMemory = {
 	clearIndex: () => ipcRenderer.invoke(ipcChannels.agentMemoryClearIndex) as Promise<import("../shared/types/agentMemory").AgentMemoryResult<{ removed: number }>>,
 	exportBundle: () => ipcRenderer.invoke(ipcChannels.agentMemoryExport) as Promise<import("../shared/types/agentMemory").AgentMemoryResult<import("../shared/types/agentMemory").AgentMemoryExportOutcome>>,
 	importBundle: () => ipcRenderer.invoke(ipcChannels.agentMemoryImport) as Promise<import("../shared/types/agentMemory").AgentMemoryResult<import("../shared/types/agentMemory").AgentMemoryImportResult>>,
+	list: () => ipcRenderer.invoke(ipcChannels.agentMemoryList) as Promise<import("../shared/types/agentMemory").AgentMemoryResult<import("../shared/types/agentMemory").AgentMemoryEntryList>>,
+	deleteEntry: (input: { target: string; projectId?: string; key: string }) => ipcRenderer.invoke(ipcChannels.agentMemoryDeleteEntry, input) as Promise<import("../shared/types/agentMemory").AgentMemoryResult<{ removed: number }>>,
 };
 
 const api = {

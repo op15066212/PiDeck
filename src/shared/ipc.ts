@@ -1133,6 +1133,10 @@ export const ipcChannels = {
 	agentMemoryExport: "agent-memory:export",
 	/** 导入记忆包（弹打开对话框；按内容去重合并，墓碑优先） */
 	agentMemoryImport: "agent-memory:import",
+	/** 逐条列出记忆（含内容与作用域），供设置页「记忆」tab 浏览 */
+	agentMemoryList: "agent-memory:list",
+	/** 删除单条记忆（写墓碑，旧导出包不会把它导回来） */
+	agentMemoryDeleteEntry: "agent-memory:delete-entry",
 	hostPluginsList: "host-plugins:list",
 	hostPluginsRescan: "host-plugins:rescan",
 	hostPluginsInstall: "host-plugins:install",

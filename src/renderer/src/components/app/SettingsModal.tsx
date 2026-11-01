@@ -3,7 +3,7 @@ import { getDefaultStore, useAtom, useAtomValue } from "jotai";
 import { settingsFocusAtom, type SettingsPaneId, type SettingsSectionId, type SettingsTabId } from "../../atoms";
 import { hasPendingUpdateAtom, updateStatusAtom } from "../../atoms/update-atoms";
 import { useSettingsFocus } from "./settings/useSettingsFocus.ts";
-import { Settings2, Network, Plug, Wrench, PawPrint, Bell, Trash2, Brush, Eye, ChartColumnBig, Activity, MessageSquare, ImageIcon, DatabaseBackup, Globe, FileCode2, GitBranch, Loader2, SlidersHorizontal, MonitorCog, Keyboard, TerminalSquare, X, Bot, Puzzle, Clapperboard } from "lucide-react";
+import { Settings2, Network, Plug, Wrench, PawPrint, Bell, Trash2, Brush, Eye, ChartColumnBig, Activity, MessageSquare, ImageIcon, DatabaseBackup, Globe, FileCode2, GitBranch, Loader2, SlidersHorizontal, MonitorCog, Keyboard, TerminalSquare, X, Bot, Puzzle, Clapperboard, Brain } from "lucide-react";
 import { t, type TranslationKey } from "../../i18n";
 import { applyAppearanceAttributes, type AppearanceSettings } from "../../themeAppearance";
 import { applyCustomThemeTokens, applyFontSizeAttributes } from "../../hooks/appearance/useAppAppearance";
@@ -34,6 +34,7 @@ import type { AppSettings, AppInfo, AvailableModel, PiInstallation, PiInstallSta
 // ── 各 tab 内容 lazy 加载：首开只下载壳 + 当前 tab 的 chunk（qrcode/表格/日志查看器等
 //    重依赖随各自 tab 拆包），切换到某 tab 时才加载其 chunk（本地文件，秒级以内）。──
 const CommonTab = lazy(() => import("./settings/CommonTab").then((m) => ({ default: m.CommonTab })));
+const AgentMemoryTab = lazy(() => import("./settings/AgentMemoryTab").then((m) => ({ default: m.AgentMemoryTab })));
 const ShortcutsTab = lazy(() => import("./settings/ShortcutsTab").then((m) => ({ default: m.ShortcutsTab })));
 const AppearanceTab = lazy(() => import("./settings/AppearanceTab").then((m) => ({ default: m.AppearanceTab })));
 const ProxyTab = lazy(() => import("./settings/ProxyTab").then((m) => ({ default: m.ProxyTab })));
@@ -271,6 +272,7 @@ const TAB_META: Record<SettingsTabId, { labelKey: TranslationKey; icon: ReactNod
 	videogen: { labelKey: SETTINGS_TAB_LABEL_KEYS.videogen, icon: <Clapperboard size={16} /> },
 	acp: { labelKey: SETTINGS_TAB_LABEL_KEYS.acp, icon: <Bot size={16} /> },
 	hostplugins: { labelKey: SETTINGS_TAB_LABEL_KEYS.hostplugins, icon: <Puzzle size={16} /> },
+	memory: { labelKey: SETTINGS_TAB_LABEL_KEYS.memory, icon: <Brain size={16} /> },
 };
 
 /**
@@ -813,6 +815,15 @@ function SettingsModalContent(props: SettingsModalProps) {
 									<TabsContent value="common" className="settings-panel min-w-0">
 										<Suspense fallback={<SettingsTabLoading />}>
 											<CommonTab draft={draftSettings} updateDraft={updateDraft} isDirty={isDirty} />
+										</Suspense>
+									</TabsContent>
+								)}
+
+								{/* ── 记忆 tab（跨 pi / DSH / ACP 的长期记忆，见 docs/agent-memory.md） ── */}
+								{activeTab === "memory" && (
+									<TabsContent value="memory" className="settings-panel min-w-0">
+										<Suspense fallback={<SettingsTabLoading />}>
+											<AgentMemoryTab draft={draftSettings} updateDraft={updateDraft} isDirty={isDirty} />
 										</Suspense>
 									</TabsContent>
 								)}

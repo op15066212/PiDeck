@@ -49,7 +49,12 @@ function describeCode(code: string): string {
  * 挂载时读一次、动作后重读：没有订阅——记忆变化的来源是 Agent 会话，设置页开着时它也可能在写，
  * 但设置页不是仪表盘，用户对「刚才那一秒的条目数」没有需求，少一条长连订阅。
  */
-export function AgentMemorySettingsSection() {
+export function AgentMemorySettingsSection(props: {
+	/** 兄弟面板（条目列表）改过记忆后 +1，让体积/索引统计一起重读。 */
+	reloadKey?: number;
+	/** 本面板的动作改过记忆后通知兄弟面板刷新。 */
+	onChanged?: () => void;
+}) {
 	const [status, setStatus] = useState<AgentMemoryStatus | null>(null);
 	const [busy, setBusy] = useState<"none" | "export" | "import" | "clear">("none");
 	const [message, setMessage] = useState<string | null>(null);
@@ -61,6 +66,11 @@ export function AgentMemorySettingsSection() {
 		if (result.ok) setStatus(result.value);
 		else setError(describeCode(result.code));
 	}, []);
+	// 依赖 props.reloadKey：条目列表删完一条后体积/条目数要跟着变。
+	useEffect(() => {
+		if (props.reloadKey === undefined) return;
+		void refresh();
+	}, [props.reloadKey, refresh]);
 
 	useEffect(() => {
 		void refresh().catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)));
@@ -78,6 +88,7 @@ export function AgentMemorySettingsSection() {
 		} finally {
 			setBusy("none");
 			void refresh();
+			props.onChanged?.();
 		}
 	};
 
@@ -101,6 +112,7 @@ export function AgentMemorySettingsSection() {
 		} finally {
 			setBusy("none");
 			void refresh();
+			props.onChanged?.();
 		}
 	};
 
@@ -116,6 +128,7 @@ export function AgentMemorySettingsSection() {
 		} finally {
 			setBusy("none");
 			void refresh();
+			props.onChanged?.();
 		}
 	};
 
@@ -131,7 +144,7 @@ export function AgentMemorySettingsSection() {
 
 	return (
 		<>
-			<SettingRow anchor="common-agent-memory-status" title={t("settings.agentMemoryStatus")} description={summary}>
+			<SettingRow anchor="memory-usage" title={t("settings.agentMemoryUsage")} description={summary}>
 				<span className="flex flex-wrap items-center gap-2">
 					<Button type="button" variant="outline" size="sm" disabled={busy !== "none"} onClick={() => void runExport()}>
 						<Download size={14} strokeWidth={2} aria-hidden="true" />

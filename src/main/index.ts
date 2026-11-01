@@ -324,6 +324,7 @@ import { runLearnerPass } from "./agentMemory/agentMemoryLearner";
 import { resolveEnhanceTargetModel } from "../shared/enhanceModelPreference";
 import { syncAgentMemoryRegistration } from "./agentMemory/AgentMemoryMcpRegistration";
 import { clearAgentMemoryIndex, readAgentMemoryStatus } from "./agentMemory/agentMemoryStatus";
+import { deleteAgentMemoryEntry, readAgentMemoryEntries } from "./agentMemory/agentMemoryEntries";
 import { exportAgentMemoryBundle, importAgentMemoryBundle } from "./agentMemory/agentMemoryBundle";
 import { registerAgentMemoryIpc } from "./ipc/agentMemoryIpc";
 import { AcpSessionArchive } from "./acp/AcpSessionArchive";
@@ -3915,6 +3916,14 @@ function registerIpc() {
 		clearIndex: () => clearAgentMemoryIndex(agentMemoryRoot()),
 		exportBundle: () => exportAgentMemoryBundle({ root: agentMemoryRoot(), getWindow: () => mainWindow }),
 		importBundle: ({ filePath }) => importAgentMemoryBundle({ root: agentMemoryRoot(), getWindow: () => mainWindow, filePath }),
+		// 项目名只用于展示：记忆键由会话 cwd 派生，要靠项目路径反查一次才认得出来。
+		listEntries: () =>
+			readAgentMemoryEntries({
+				root: agentMemoryRoot(),
+				// ssh 项目没有本机路径，用远端路径派生同一个键（与会话 cwd 的派生口径一致）。
+				projects: () => projectStore.list().map((project) => ({ name: project.name, path: "locator" in project ? project.locator.remotePath : project.path })),
+			}),
+		deleteEntry: (input) => deleteAgentMemoryEntry(agentMemoryRoot(), input),
 		warn: mcpWarning,
 	});
 	quitCleanup.register("agent-memory-ipc", () => {

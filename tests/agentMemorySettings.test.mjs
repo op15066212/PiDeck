@@ -70,14 +70,18 @@ test("渲染层、预览、词典与锚点都接上了这个开关", () => {
 	const preview = readFileSync("src/renderer/src/previewApi.ts", "utf8");
 	assert.match(preview, /agentMemoryEnabled\s*:\s*false\b/);
 
+	const memoryTab = readFileSync("src/renderer/src/components/app/settings/AgentMemoryTab.tsx", "utf8");
+	assert.match(memoryTab, /draft\.agentMemoryEnabled\s*\?\?\s*false/);
+	assert.match(memoryTab, /settings-section-memory-switches/);
+	// 独立 tab：常用页不再承载记忆开关，否则又变回两屏。
 	const commonTab = readFileSync("src/renderer/src/components/app/settings/CommonTab.tsx", "utf8");
-	assert.match(commonTab, /draft\.agentMemoryEnabled\s*\?\?\s*false/);
-	assert.match(commonTab, /settings-section-common-agent-memory/);
+	assert.ok(!commonTab.includes("AgentMemory"), "记忆已搬出常用页");
 
 	const fieldAnchors = readFileSync("src/renderer/src/utils/settingsFieldAnchors.ts", "utf8");
-	assert.match(fieldAnchors, /common-agent-memory-enabled/);
+	assert.match(fieldAnchors, /slug: "memory-enabled"/);
+	assert.match(fieldAnchors, /slug: "memory-usage"/, "记忆用量要有设置项锚点");
 	const sectionAnchors = readFileSync("src/renderer/src/utils/settingsSectionAnchors.ts", "utf8");
-	assert.match(sectionAnchors, /common-agent-memory/);
+	assert.match(sectionAnchors, /slug: "memory-switches"/);
 
 	const zhCopy = readFileSync("src/renderer/src/i18n/rendererCopy.zh-CN.ts", "utf8");
 	for (const key of ["settings.agentMemorySection", "settings.agentMemorySectionDesc", "settings.agentMemoryEnabled", "settings.agentMemoryEnabledDesc"]) {
@@ -98,12 +102,12 @@ test("自动学习开关：默认关、依赖启用开关、四端接线齐全",
 	const preview = readFileSync("src/renderer/src/previewApi.ts", "utf8");
 	assert.match(preview, /agentMemoryAutoLearnEnabled\s*:\s*false/);
 
-	const commonTab = readFileSync("src/renderer/src/components/app/settings/CommonTab.tsx", "utf8");
-	assert.match(commonTab, /draft\.agentMemoryAutoLearnEnabled\s*\?\?\s*false/);
-	assert.match(commonTab, /disabled=\{!\(draft\.agentMemoryEnabled/, "未启用记忆时学习开关应置灰");
+	const memoryTab = readFileSync("src/renderer/src/components/app/settings/AgentMemoryTab.tsx", "utf8");
+	assert.match(memoryTab, /draft\.agentMemoryAutoLearnEnabled\s*\?\?\s*false/);
+	assert.match(memoryTab, /disabled=\{!\(draft\.agentMemoryEnabled/, "未启用记忆时学习开关应置灰");
 
 	const fieldAnchors = readFileSync("src/renderer/src/utils/settingsFieldAnchors.ts", "utf8");
-	assert.match(fieldAnchors, /common-agent-memory-auto-learn/);
+	assert.match(fieldAnchors, /slug: "memory-auto-learn"/);
 
 	// 学习循环必须挂在「回合结算」上，并且真的读这两个开关（否则开了也不跑）。
 	const main = readFileSync("src/main/index.ts", "utf8");

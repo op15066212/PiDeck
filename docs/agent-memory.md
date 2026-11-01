@@ -89,9 +89,17 @@
 - **导入内容同样不可信**：不可见字符/注入句式/疑似密钥、未知 target、超 2000 字符、空条目 → 计入 `rejected`，不中断整次导入。整包格式或版本不对则直接报错，不做半截导入。
 - **幂等**：同一个包导两次，第二次 `added: 0`。
 
-设置页（通用 → 智能体记忆）有四个操作：状态行（文件体积/条目数/索引规模/本机名字）、导出、导入、清空索引。清空索引只删 SQLite 里的行，记忆文件不动，下一次检索自动重建。
+### 4.5.1 设置页：「记忆」tab
 
-IPC：`agentMemory:status | clear-index | export | import`（`src/main/ipc/agentMemoryIpc.ts`），只接受主框架来源、入参校验、错误以 `{ok:false,code}` 返回而不是抛。
+独立的设置 tab（`AgentMemoryTab.tsx`，侧栏「基础」簇，terminal 之后），不再挤在「常用设置」里。分三块，正好对应三个问题：
+
+1. **开关**：启用 / 自动学习（主开关关着时学习项置灰）。
+2. **用量与索引**：状态行（各文件体积/条目数/索引规模/本机名字）+ 导出 / 导入 / 清空索引。清空索引只删 SQLite 里的行，记忆文件不动，下一次检索自动重建。
+3. **记忆条目**（`AgentMemoryEntryList.tsx`）：按「作用域 → 文件」逐条列出，可展开看全文、可按内容/项目名过滤、可删单条。分组头显示作用域（全局 / 项目名 / 本机设备）、条目数、字数与预算，答的是「为什么这条 DSH 会话看不到」——它可能落在项目或设备作用域里，只参与检索不参与每轮注入。
+
+**能删不能改**：改写一条记忆的语义（去重键、预算裁剪、墓碑）都在工具层，设置页再放一个编辑器等于把那套规则抄第二遍；想改内容就让 Agent `memory_replace`，想改措辞就删掉再说一遍。删除与列表共用同一套内容规范化（`normalizeKey`），所以列表给的 `key` 一定能删掉它自己那一行——这条由 `tests/agentMemoryEntryList.test.mjs` 守着。全局/项目作用域的删除会写墓碑（旧导出包不会复活它），设备作用域不写（那类条目本来就不参与导出导入）。
+
+IPC：`agentMemory:status | clear-index | export | import | list | delete-entry`（`src/main/ipc/agentMemoryIpc.ts`），只接受主框架来源、入参校验、错误以 `{ok:false,code}` 返回而不是抛。
 
 ## 4.6 学习循环（宿主侧，默认关）
 
@@ -133,11 +141,14 @@ node --test tests/agentMemoryServer.test.mjs   # 工具层 + 协议层（真进�
 node --test tests/agentMemoryMounts.test.mjs   # 挂载形态、mcp.json 合并/幂等/可撤销、开关动作、项目键
 node --test tests/agentMemorySettings.test.mjs  # 开关默认关、非法入参、渲染层与主进程接线
 node --test tests/agentMemorySync.test.mjs     # 导出形状、并集导入、墓碑、设备作用域
+node --test tests/agentMemoryEntryList.test.mjs # 条目浏览：列表 key 可删、只删一行、墓碑、非法入参
+node --test tests/agentMemoryLearn.test.mjs    # 学习循环：水位、失败不推、闸门
+node --test tests/agentMemoryAcpE2E.test.mjs   # ACP 真进程：mcpServers 下发与工具调用
 node --test tests/zhTwCopy.test.mjs            # 改了 zh-CN 词典后必须重跑生成器
 npm run typecheck
 ```
 
-守卫测试固定的行为（含学习循环：不白调模型、失败不推水位、写入过扫描闸门）：重复写入幂等、目标隔离、写入扫描拒绝、替换/删除歧义报错、CJK 子串检索、target 过滤不漏、会话指纹未变时跳过、追加后整份重灌不重复、`system` 消息不入库、fork 会话共享消息 id 时两边都要入索引、`cwd` 必须能派生出项目键、mcp.json 损坏时不覆盖、打包/开发两态脚本路径、导出不含设备记忆、导入幂等且坏条目不断任务、墓碑双向传播、设备记忆可检索且不进包。
+守卫测试固定的行为（含学习循环：不白调模型、失败不推水位、写入过扫描闸门）：重复写入幂等、目标隔离、写入扫描拒绝、替换/删除歧义报错、CJK 子串检索、target 过滤不漏、会话指纹未变时跳过、追加后整份重灌不重复、`system` 消息不入库、fork 会话共享消息 id 时两边都要入索引、`cwd` 必须能派生出项目键、mcp.json 损坏时不覆盖、打包/开发两态脚本路径、导出不含设备记忆、导入幂等且坏条目不断任务、墓碑双向传播、设备记忆可检索且不进包、记忆 tab 的条目清单给的 key 正好能删掉它自己那一行。
 
 ## 8. 与 hermes 的差异
 

@@ -8,7 +8,7 @@
 import { ipcMain, type BrowserWindow, type IpcMainInvokeEvent } from "electron";
 
 import { ipcChannels } from "../../shared/ipc";
-import type { AgentMemoryExportOutcome, AgentMemoryImportResult, AgentMemoryResult, AgentMemoryStatus } from "../../shared/types/agentMemory";
+import type { AgentMemoryEntryList, AgentMemoryExportOutcome, AgentMemoryImportResult, AgentMemoryResult, AgentMemoryStatus } from "../../shared/types/agentMemory";
 
 export interface AgentMemoryIpcDeps {
 	getWindow: () => BrowserWindow | null;
@@ -18,11 +18,15 @@ export interface AgentMemoryIpcDeps {
 	exportBundle: () => Promise<AgentMemoryExportOutcome>;
 	/** 弹打开对话框并合并；格式非法时抛错（不落盘）。 */
 	importBundle: (options: { filePath?: string }) => Promise<AgentMemoryImportResult>;
+	/** 逐条列出记忆（含内容与作用域），供「记忆」tab 浏览。 */
+	listEntries: () => AgentMemoryEntryList;
+	/** 删除单条记忆；写墓碑避免旧导出包把它导回来。 */
+	deleteEntry: (input: { target: string; projectId: string; key: string }) => { removed: number };
 	warn: (code: string) => void;
 }
 
 export function registerAgentMemoryIpc(deps: AgentMemoryIpcDeps): () => void {
-	const channels = [ipcChannels.agentMemoryStatus, ipcChannels.agentMemoryClearIndex, ipcChannels.agentMemoryExport, ipcChannels.agentMemoryImport];
+	const channels = [ipcChannels.agentMemoryStatus, ipcChannels.agentMemoryClearIndex, ipcChannels.agentMemoryExport, ipcChannels.agentMemoryImport, ipcChannels.agentMemoryList, ipcChannels.agentMemoryDeleteEntry];
 
 	/** 统一包成 `{ok,value}` / `{ok:false,code}`：渲染层不需要猜错误形态，异常码也不会带出本机路径。 */
 	async function result<T>(event: IpcMainInvokeEvent, run: () => Promise<T> | T): Promise<AgentMemoryResult<T>> {
@@ -45,6 +49,20 @@ export function registerAgentMemoryIpc(deps: AgentMemoryIpcDeps): () => void {
 		result(event, () => {
 			const filePath = typeof input === "object" && input !== null ? (input as { filePath?: unknown }).filePath : undefined;
 			return deps.importBundle({ filePath: typeof filePath === "string" && filePath.length > 0 ? filePath : undefined });
+		}),
+	);
+
+	ipcMain.handle(ipcChannels.agentMemoryList, (event) => result(event, () => deps.listEntries()));
+	// 删除只接受「target + 作用域 + 内容键」三件套：渲染层拿不到文件路径，也就无法借这个通道
+	// 删到记忆目录之外的任何东西。键是规范化后的内容，最长 4000 字符（单条上限 2000 的两倍余量）。
+	ipcMain.handle(ipcChannels.agentMemoryDeleteEntry, (event, input: unknown) =>
+		result(event, () => {
+			const value = typeof input === "object" && input !== null ? (input as Record<string, unknown>) : {};
+			const target = typeof value.target === "string" ? value.target : "";
+			const projectId = typeof value.projectId === "string" ? value.projectId : "";
+			const key = typeof value.key === "string" ? value.key : "";
+			if (!target || !key || key.length > 4000 || projectId.length > 200) throw new Error("invalid-input");
+			return deps.deleteEntry({ target, projectId, key });
 		}),
 	);
 

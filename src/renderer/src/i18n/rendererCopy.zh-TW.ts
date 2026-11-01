@@ -2,7 +2,7 @@
  * 本文件由 `node scripts/genZhTwCopy.mjs` 生成，请勿手改。
  * 文案改动请修改对应的 zh-CN 源文件后重新生成；转换规则见该脚本的 OVERRIDES。
  * 注释刻意保留简体：属于开发者视角文本，不面向用户。
- * source-sha256: 59686722371577e1b1447af5ba095afdb456627c26753b53188ab982b9d84d90（来自 src/renderer/src/i18n/rendererCopy.zh-CN.ts 的词典区块指纹，由 tests/zhTwCopy.test.mjs 校验新鲜度）
+ * source-sha256: f08fb4c17d234f7421847496c9564cbb2dc83a1e17bd2a0f7bd7c1b77ef7f959（来自 src/renderer/src/i18n/rendererCopy.zh-CN.ts 的词典区块指纹，由 tests/zhTwCopy.test.mjs 校验新鲜度）
  */
 import { mainProcessZhTW } from "../../../shared/i18n/mainProcessCopy.zh-TW";
 import type { TranslationKey } from "./rendererCopy.zh-CN";
@@ -4645,6 +4645,7 @@ export const zhTW: Record<TranslationKey, string> = {
 	"settings.tabs.imagegen": "生圖",
 	"settings.tabs.videogen": "生影片",
 	"settings.tabs.hostplugins": "PiDeck 外掛",
+	"settings.tabs.memory": "記憶",
 	"settings.tabs.acp": "ACP 工具",
 	"settings.tabs.imagegenDesc": "獨立生圖供應商（OpenAI/火山/SiliconFlow）",
 	"settings.shortcuts.intro": "自定義全域快捷鍵：點選「修改」後直接按新組合鍵即可錄入（Esc 取消，Delete 恢復預設）。修改後立即生效，無需重啟。",
@@ -5508,6 +5509,25 @@ export const zhTW: Record<TranslationKey, string> = {
 	"settings.agentMemoryEnabledDesc": "開啟後 Agent 才能用 memory_add / memory_replace / memory_remove / memory_search / memory_get / session_search / memory_status。只對新會話生效；關閉不會刪除已儲存的記憶檔案。",
 	"settings.agentMemoryAutoLearn": "自動學習記憶",
 	"settings.agentMemoryAutoLearnDesc": "每 12 輪對話後讓模型從最近的會話裡提煉最多 3 條記憶（用提示詞增強的模型，可用增強模型設定另行指定；單次會話不會重複提煉）。會產生模型呼叫費用，預設關閉。",
+	"settings.agentMemoryStatusDesc": "記憶檔案體積、會話索引規模與本機裝置標識。匯出/匯入與清空索引都不改變記憶內容，所以不需要點儲存。",
+	"settings.agentMemoryEntries": "記憶條目",
+	"settings.agentMemoryEntriesDesc": "逐條列出所有作用域的記錄：全域四份檔案注入每一輪對話，專案與裝置作用域只在檢索時出現。刪除會留下墓碑，舊匯出包不會把它導回來。",
+	"settings.agentMemorySearchPlaceholder": "搜尋記憶內容或專案名",
+	"settings.agentMemoryEntriesCount": "顯示 {shown} / {total} 條",
+	"settings.agentMemoryEmpty": "還沒有任何記憶。讓 Agent 用 memory_add 記下一條，或從別的裝置匯入。",
+	"settings.agentMemoryNoMatch": "沒有匹配的記憶。",
+	"settings.agentMemoryGroupBudget": "{count} 條 · {chars}/{maxChars} 字 · 上限 {maxEntries} 條",
+	"settings.agentMemoryGroupPlain": "{count} 條 · {chars} 字 · 檢索時可見",
+	"settings.agentMemoryEntryChars": "{chars} 字",
+	"settings.agentMemoryDeleteEntry": "刪除這條記憶",
+	"settings.agentMemoryDeleteEntryConfirm": "刪除後這條記憶不會再進入任何會話，並留下墓碑防止舊匯出包把它導回來。要刪除的是「{content}」。",
+	"settings.agentMemoryTargetMemory": "通用記憶",
+	"settings.agentMemoryTargetUser": "使用者偏好",
+	"settings.agentMemoryTargetFailure": "教訓",
+	"settings.agentMemoryTargetStanding": "常駐指令",
+	"settings.agentMemoryScopeGlobal": "全域",
+	"settings.agentMemoryScopeDevice": "本機裝置 · {device}",
+	"settings.agentMemoryUsage": "用量與索引",
 	"settings.agentMemoryStatus": "記憶狀態",
 	"settings.agentMemorySummaryFiles": "{size} / {count} 條",
 	"settings.agentMemorySummaryIndex": "索引 {sessions} 個會話 · {messages} 條訊息",
