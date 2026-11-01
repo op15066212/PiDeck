@@ -117,7 +117,7 @@ export function SessionSurfaceStage(props: { sessionId: string; sessionTimeline:
 			// 让出一轮再发：同步发下一页会让 effect → setState → effect 连成一条嵌套更新链。
 			const timer = setTimeout(() => {
 				setPendingAttempts((current) => current + 1);
-				sessionTimeline.loadMoreMessages("button");
+				sessionTimeline.loadMoreMessages("backfill");
 			}, 0);
 			return () => clearTimeout(timer);
 		}
