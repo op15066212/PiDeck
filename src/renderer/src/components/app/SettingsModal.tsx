@@ -356,6 +356,7 @@ function SettingsModalContent(props: SettingsModalProps) {
 	// 快捷键存在冲突等非法状态时禁用保存（ShortcutsTab 上报，见 saveAll 按钮）
 	const [shortcutsInvalid, setShortcutsInvalid] = useState(false);
 	const handleShortcutsInvalidChange = useCallback((invalid: boolean) => setShortcutsInvalid(invalid), []);
+	const [settingsSaving, setSettingsSaving] = useState(false);
 	// 左侧导航黄点来源：与关闭确认同一套字段目录，避免两处口径不一致
 	const dirtyTabIds = useMemo(() => dirtySettingsTabIds({ dirtyFields, visionDirty: visionDraft.dirty, imageGenDirty, videoGenDirty, acpDirty }), [dirtyFields, visionDraft.dirty, imageGenDirty, videoGenDirty, acpDirty]);
 	/** 各 tab 的局部编辑态（WSL 输入/Web 端口/宠物预览模式）在取消时通过递增信号重置 */
@@ -408,7 +409,7 @@ function SettingsModalContent(props: SettingsModalProps) {
 	}, []);
 
 	/** 保存全部内容：全局设置差异提交（无差异也提交空 patch，触发「已保存」反馈）+ 视觉桥/生图草稿（若有改动）；返回是否全部成功 */
-	const saveAll = async (): Promise<boolean> => {
+	const saveAllDrafts = async (): Promise<boolean> => {
 		let ok = true;
 		// 无修改也支持再次保存：始终提交当前草稿差异（无差异即空 patch），
 		// updateSettings 会走 api.settings.update 并提示「设置已保存」，因此保存按钮无需因「无修改」禁用。
@@ -448,6 +449,17 @@ function SettingsModalContent(props: SettingsModalProps) {
 		return ok;
 	};
 
+	// 保存尚未结算时保持明确的忙碌态，避免重复提交和「点保存后立即关闭」误报未保存。
+	const saveAll = async (): Promise<boolean> => {
+		if (settingsSaving) return false;
+		setSettingsSaving(true);
+		try {
+			return await saveAllDrafts();
+		} finally {
+			setSettingsSaving(false);
+		}
+	};
+
 	/** 取消全部修改：将草稿回退到初始快照，丢弃所有未保存变更（含视觉桥/生图草稿与各 tab 局部编辑态） */
 	const cancelAll = () => {
 		setDraftSettings(deepClone(baseSnapshotRef.current));
@@ -480,6 +492,7 @@ function SettingsModalContent(props: SettingsModalProps) {
 	 *  videoGenDirty/acpDirty 此前漏算：改了生视频供应商或 ACP 工具表后直接关弹窗不会弹确认，草稿静默丢失。 */
 	const hasIndependentDraftsDirty = visionDraft.dirty || imageGenDirty || videoGenDirty || acpDirty;
 	const handleClose = () => {
+		if (settingsSaving || configPaneState.saving) return;
 		const settingsDirty = dirtyFields.size > 0 || hasIndependentDraftsDirty;
 		if (settingsDirty || configPaneState.hasDirty) {
 			setCloseConfirmOpen(true);
@@ -701,24 +714,25 @@ function SettingsModalContent(props: SettingsModalProps) {
 									variant="default"
 									size="sm"
 									onClick={saveAll}
-									disabled={visionDraft.saving || (visionDraft.dirty && visionDraft.modelMissing) || shortcutsInvalid}
+									disabled={settingsSaving || visionDraft.saving || (visionDraft.dirty && visionDraft.modelMissing) || shortcutsInvalid}
+									aria-busy={settingsSaving}
 									// 视觉桥开启但未选模型时禁用保存：悬停说明原因（对应 visionDraft 的 modelRequired 提示）
 									title={shortcutsInvalid ? t("settings.shortcuts.saveBlocked") : visionDraft.dirty && visionDraft.modelMissing ? t("settings.vision.modelRequired") : undefined}
 								>
-									{t("common.save")}
+									{settingsSaving ? t("common.saving") : t("common.save")}
 								</Button>
 								{hasAnyDirtyChanges ? (
 									/* 放弃更改用 outline（白底描边）而非灰底 secondary：与黑色主按钮形成
 									   清晰的主次层级（shadcn dialog 的 confirm/cancel 惯例），避免一对按钮
 									   都是灰色填充分不出哪个是提交。 */
-									<Button variant="outline" size="sm" onClick={cancelAll}>
+									<Button variant="outline" size="sm" onClick={cancelAll} disabled={settingsSaving || configPaneState.saving}>
 										{t("common.cancel")}
 									</Button>
 								) : undefined}
 							</>
 						)}
 						<DialogClose asChild>
-							<Button variant="ghost" size="icon" aria-label={t("common.close")} title={t("common.close")}>
+							<Button variant="ghost" size="icon" aria-label={t("common.close")} title={settingsSaving || configPaneState.saving ? t("common.saving") : t("common.close")} disabled={settingsSaving || configPaneState.saving}>
 								<X size={18} strokeWidth={2.2} aria-hidden="true" />
 							</Button>
 						</DialogClose>
