@@ -136,6 +136,7 @@ function FailedBody({ state }: { state: Extract<ProviderLoginPhase, { phase: "fa
 
 /** 原始报错文本块：等宽、可选中、长行换行，避免撑破弹框。 */
 function RawDetail({ text }: { text: string }) {
+	// scroll-ok: text —— 单一文本块（pre / markdown 正文），没有行列表可切，虚拟化无从下手。
 	return <p className="max-h-32 overflow-y-auto break-all font-mono text-xs text-muted-foreground select-text">{text}</p>;
 }
 

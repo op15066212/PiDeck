@@ -96,47 +96,62 @@ node tests/scrollContainerGuard.mjs --seed   # 重新生成基线
   判据：**如果短列表是 `ul`/`ol`，role 不要传 `containerProps`（外层容器已经是 list）；如果短列表也是 `div`，用 `containerProps`。**
 
 
-## 七、2026-11 全量审计结论
+## 七、2026-11 第二轮：基线清零
 
-目标：不只是「未判定归零」，而是「会随数据无限变长的滚动窗，逐个判过」。
+上一轮留下 133 条「等后续批次处理」的基线。基线的问题是**它和缺陷长得一样**：没人知道
+里面多少条是真待办、多少条其实早有判定。这一轮把它清到 0，规则是每条必须二选一：
 
-盘点结果（`node tests/scrollContainerGuard.mjs`）：
+- 接 `<VirtualStack>`（容器 ref 与 `scrollRef` 同名接线）；或
+- 写 `scroll-ok: <类别>` 并给出**能复算的依据**（指向具体的分页函数、上限常量、子组件边界）。
 
-```text
-滚动容器 166 个：已虚拟化 14 · 已豁免 19 · 基线存量 133 · 未判定 0
+判据不写死数字，随时可复算：
+
+```bash
+node tests/scrollContainerGuard.mjs        # 四档统计；未判定必须为 0
+node tests/scrollContainerGuard.mjs --seed # 只有全量判定后才允许重建基线（本轮之后基线应为空）
 ```
 
-本轮新增接入：
+### 7.1 本轮修订的三条分类判据
 
-| 接入点 | 为什么必须 | 行高 |
-| --- | --- | --- |
-| `components/agents/file-diff.tsx` | 一个文件的 diff 几千行是常态，每行一个 `AgentCodeLine` | 固定 20px（`leading-5` + `whitespace-pre` 不折行） |
-| `web/WebFilePreview.tsx` 行号文本 | 网页版打开大文件，整篇逐行渲染 | 可变（`pre-wrap` 折行），靠实测 |
+上一轮的四类不够用，出现了三种反复出现的形状，各自定死判据：
 
-本轮新增豁免（附判据，不是「看着不多」）：
+| 形状 | 判据 | 依据在哪 | 归类 |
+| --- | --- | --- | --- |
+| 受控分页列表 | 行数由「点了多少次更多」决定，而不是随数据自动增长 | 侧栏 `showMoreChildren` / 网页侧栏 `resolveSidebarWindow` / Git 提交图每次 +30 / 快捷消息 `MAX_QUICK_MESSAGES` | `bounded` |
+| 行列表在子组件里 | 本层只是个空滚动窗，行模型由 children 或子组件持有 | `MessageShareModal` → `MessageSelectionTree`；`WebWorkspaceDrawer` → 各 tab 自己的面板 | `nested` |
+| 单一文本块 | 一块 markdown / `pre` / diff 原文，没有「行列表」概念 | 公告正文、文件预览、错误原文 | `text` |
 
-| 位置 | 类别 | 判据 |
-| --- | --- | --- |
-| `ui-shadcn/notice-history-dialog.tsx` 表格 | `bounded` | 自带分页：`rows = filtered.slice((page-1)*PAGE_SIZE, page*PAGE_SIZE)`，一页行数封顶 |
-| `app/ProviderLoginModal.tsx` 事件日志 | `transient` | 生命周期等于一次登录弹窗，条数由 pi 的几步事件决定（几十条） |
-| `web/WebFilePreview.tsx` markdown 预览 | `text` | 整篇交给 `MarkdownStream`，按行切会拆散标题/代码块/列表结构与复制语义 |
+**受控分页为什么算判定而不是缺口**：判据是「会不会随数据无限变长」。分页列表在用户
+不点「更多」时行数恒定，点了是用户主动的一次性动作，不是流式或历史增长；而虚拟化它要
+先设计无限滚动（把「更多」按钮换成触底加载），那是另一个功能，不是接一个栈能解决的。
 
-扫描器本轮修掉的两处假判：
+### 7.2 本轮接入的滚动窗
 
-1. **变量声明冒充容器**：`const scrollClass = "overflow-auto"` 含 `overflow-` 字面量，曾被当成滚动容器；
-   真正的容器行（类名取自变量、本行没有字面量）反而扫不到，基线上留的是假指纹。
-   现在跳过「不含 `<` 的声明行」，单行 JSX 里的容器仍会扫到（`scrollContainerGuard.test.mjs` 有对应用例）。
-2. **类名抽成变量就看不见**：`file-diff` 的容器行改为内联三元，不再经 `scrollClass` 中转。
+判定记录（`node tests/scrollContainerGuard.mjs` 现算已达 22 处）：
 
-基线里仍然「会变长、但本轮没接」的 5 处，以及它们卡在哪：
-
-| 位置 | 卡点 |
+| 接入点 | 为什么 |
 | --- | --- |
-| `sidebar/SidebarContent.tsx` → `ProjectTree` | 嵌套树（项目 → 分组 → 会话），要先压平成一维行序列才能接栈 |
-| `web/WebTimeline.tsx` 消息流 | 三处依赖真实 DOM：`#web-msg-<id>` 锚点跳转、前插时的原生 scroll anchoring、贴底判定 |
-| `web/WebSidebar.tsx` 会话树 | 同 ProjectTree |
-| `web/WebWorkspaceDrawer.tsx` 文件树 | 同 ProjectTree |
-| `sidebar/AnnouncementCenter.tsx` 已读公告 | 条数受公告发布节奏限制（几十条），暂按 bounded 处理 |
+| `web/WebTimeline.tsx` 消息流 | 长会话几百轮、每轮几十个节点；同时补了命令式跳转句柄（见 7.3） |
+| `web/WebSessionStrips.tsx` 子代理 / 待办条 | 与桌面同一数据源，条数随子代理与任务增长 |
+| `components/session/ComposerPanels.tsx` | 命令面板候选列表 |
+| `components/session/DshAgentToolsPanel.tsx` | 工具清单，插件多了会几十上百条 |
+| `components/session/trajectory/SessionTrajectoryView.tsx` 详情面板 | 轨迹事件流 |
+| `components/session/SessionSubagentsStrip.tsx` | 子代理行（已有虚拟化的姊妹条） |
+| `config/PiDeckMcpPanel.tsx` | MCP 服务器 / 工具清单 |
 
-这 5 处是**已知缺口**，不是「判定为不需要」——接之前先解决上表第二列的卡点，否则会退回
-「跳转失效」「滚到底反弹」这类已经在时间线上踩过的坑。
+### 7.3 流式输出时「点刻度跳不回去」：仲裁补了第三维
+
+前一轮只挡了「跳转挂起（`pendingJump`）」这一种情况下的引擎上报。真机上仍然失效，
+因为**最常见的那条路径根本不设 `pendingJump`**：用户点的刻度若在已挂载窗口内（流式时
+点的常常就是最新那几轮），`jumpToMessage` 走「DOM 已存在」分支，落位后直接返回。
+
+于是流式下一帧：引擎 resize → 上报 following=true → `autoScroll` 变回 true → 跟着新内容
+滚回底部。用户看到的就是「跳过去了又弹回来」。
+
+修法（`hooks/timelineJumpGuard.ts`）：仲裁条件从「有挂起跳转」扩展为
+**「有挂起跳转 或 有浏览 pin」**。pin 存在表示视口被钉在某一行，此时引擎的「已跟底」
+是过期判定。落位后立刻建立 pin（`jumpToMessage` 两条路径都建），RO 才能在内客增高时
+补位移；用户自己滚回底部时 pin 被清、上报恢复接收。
+
+判据在 `tests/timelineJumpGuard.test.mjs`（含「没有 pin 时必须照常接收上报」的反向样本——
+只测「该忽略」一侧，把条件写成恒 true 也能全绿）。

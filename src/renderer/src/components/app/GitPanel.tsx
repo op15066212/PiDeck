@@ -1368,6 +1368,8 @@ export function GitPanel(props: GitPanelProps) {
 						)}
 						{branchOpen &&
 							createPortal(
+								// scroll-ok: transient —— 分支选择下拉：portal 里的一次性弹窗，点选即关、下次打开重建，
+								// 行的生命周期等于一次选择；虚拟器要的测量缓存与 ResizeObserver 在这类窗里没有收益。
 								<div ref={branchDropdownRef} className="z-50 max-h-[calc(100vh-16px)] max-w-[calc(100vw-16px)] overflow-auto rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md" style={branchDropdownStyle}>
 									{props.branches.map((branch) => (
 										<Button

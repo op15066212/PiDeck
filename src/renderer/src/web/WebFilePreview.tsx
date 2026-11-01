@@ -131,6 +131,7 @@ function FilePreviewBody({ projectId, path, line }: { projectId: string; path: s
 		}
 		return (
 			<div className="flex min-h-0 flex-1 flex-col">
+				{/* scroll-ok: text —— 单一文本块（pre / markdown 正文），没有行列表可切，虚拟化无从下手。 */}
 				<div className="markdown-body min-h-0 flex-1 overflow-y-auto px-3 py-2">
 					<MarkdownStream text={state.content} onOpenExternal={(url: string) => window.open(url, "_blank", "noopener")} />
 				</div>

@@ -365,6 +365,7 @@ export function SessionView({
 					    必须用 askPanelVisible 而不是仅 runtimeUi 门控：overlay 无 pending 时返回 null，
 					    只看 runtimeUi 会留下一条空白底栏。 */}
 					{runtimeUi && askPanelVisible ? (
+						// scroll-ok: bounded —— 行数有硬上限（受控分页 / 上限常量 / 固定枚举），不随数据无限增长。
 						<div className="session-v-ask min-h-0 shrink-0 overflow-y-auto overscroll-contain [scrollbar-gutter:stable]" style={{ maxHeight: askMaxHeight }} aria-live="polite">
 							<div className="pb-2" style={chatContentWidthStyle}>
 								{runtimeUi}

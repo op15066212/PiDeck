@@ -636,6 +636,7 @@ function VisionBridgeDetail(props: { events: VisionEventsInfo | null; loading: b
 		return <p className="mt-2 text-micro text-muted-foreground">{t("app.visionNoEvents")}</p>;
 	}
 	return (
+		// scroll-ok: bounded —— 行数有硬上限（受控分页 / 上限常量 / 固定枚举），不随数据无限增长。
 		<div className="mt-2 max-h-56 overflow-y-auto border-t border-border/60 pt-2 text-micro leading-relaxed text-muted-foreground">
 			<div className="flex flex-wrap items-center gap-x-3 gap-y-1">
 				<span className="font-mono text-foreground/80">{batch.model}</span>

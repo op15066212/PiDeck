@@ -1278,7 +1278,9 @@ export function useSessionTimelineController(options: { sessionId?: string; mess
 	const setAutoScrollFromScroller = useCallback(
 		(following: boolean) => {
 			// 跳转事务进行中：不接受引擎的跟底上报（见 pendingJumpRef 注释）。
-			if (shouldIgnoreFollowReport(following, Boolean(pendingJumpRef.current))) return;
+			// 第三维是浏览 pin：跳转落位后目标行已在 DOM、没有 pendingJump，此时若不看 pin，
+			// 引擎在流式期间的 following=true 上报会把 autoScroll 拉回 true，下一帧就滚回底部（「跳了又弹回」）。
+			if (shouldIgnoreFollowReport(following, Boolean(pendingJumpRef.current), browsePinRef.current !== null)) return;
 			// stopScroll 的迟到 onFollowChange(false) 不得覆盖发送动画的恢复跟随。
 			if (sendScrollRef.current.isAnimating) return;
 			// 从历史浏览回到跟随时，先同步关闭旧浏览事务；不能等 autoScroll effect，
@@ -1599,6 +1601,12 @@ export function useSessionTimelineController(options: { sessionId?: string; mess
 				scrollJumpTargetIntoView(timeline, target);
 				highlightMessage(target, requestOwnerKey);
 				clearTimelineReveal();
+				// 落位后立刻建浏览 pin：流式还在继续，没有 pin 时下一帧 resize 会把视口拽回底部
+				// （引擎上报 following=true → autoScroll 变 true，用户看到的正是「跳了又弹回」）。
+				// pin 同时让 RO 在内容增高时补位移，等用户自己滚回底部才解除。
+				const jumpPin = findBrowsePin(timeline, readVisibleRowsRef.current());
+				browsePinRef.current = jumpPin;
+				browsePinFrozenRef.current = Boolean(jumpPin);
 				return;
 			}
 			// 命中可能在已完成轮的「执行过程」折叠区里：Radix 收起会把中间回答/工具整块卸载，
@@ -1933,6 +1941,12 @@ export function useSessionTimelineController(options: { sessionId?: string; mess
 			scrollJumpTargetIntoView(timeline, target);
 			highlightMessage(target, ownerKey);
 			clearTimelineReveal();
+			// 落位后立刻建浏览 pin：流式还在继续，没有 pin 时下一帧 resize 会把视口拽回底部
+			// （引擎上报 following=true → autoScroll 变 true，用户看到的正是「跳了又弹回」）。
+			// pin 同时让 RO 在内容增高时补位移，等用户自己滚回底部才解除。
+			const jumpPin = findBrowsePin(timeline, readVisibleRowsRef.current());
+			browsePinRef.current = jumpPin;
+			browsePinFrozenRef.current = Boolean(jumpPin);
 			return;
 		}
 		// 目标还没挂上：批次在途（跳远时一次排满几十轮）就等它继续消费。
