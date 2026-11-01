@@ -1432,7 +1432,10 @@ export function useSessionTimelineController(options: { sessionId?: string; mess
 		(source: "scroll" | "button" = "scroll") => {
 			const requestOwnerKey = ownerKey;
 			const timeline = timelineRef.current;
-			if (source === "scroll") captureBrowsePin(true);
+			// 按钮点击是显式请求：先脱离贴底跟随，再抓浏览钉行。顺序不能反——captureBrowsePin
+			// 在 autoScroll 为真时直接 return（:1230），贴底点按钮会一个钉行都抓不到。
+			if (source === "button") escapeAutoScroll();
+			captureBrowsePin(true);
 			// 同上：翻页会在顶部插入，期间必须能按行测到 pin（整表渲染）。
 			beginPrependSolid();
 			if (timeline && ownerKeyRef.current === requestOwnerKey) {
@@ -1477,6 +1480,7 @@ export function useSessionTimelineController(options: { sessionId?: string; mess
 									following: autoScrollRef.current,
 									generationAtRequest: browseGeneration,
 									currentGeneration: historyBrowseGenerationRef.current,
+									explicit: source === "button",
 								})
 							) {
 								const growth = resolvePageWindowGrowth(page.messages);
@@ -1537,6 +1541,7 @@ export function useSessionTimelineController(options: { sessionId?: string; mess
 									following: autoScrollRef.current,
 									generationAtRequest: browseGeneration,
 									currentGeneration: historyBrowseGenerationRef.current,
+									explicit: source === "button",
 								})
 							) {
 								const growth = resolvePageWindowGrowth(page.messages);
@@ -1555,7 +1560,7 @@ export function useSessionTimelineController(options: { sessionId?: string; mess
 				return;
 			}
 		},
-		[beginPrependSolid, cachedEntry?.revision, captureBrowsePin, diskPage, expandWindowBatched, historyHasMore, isLoadingMessagePage, messages, options.sessionId, ownerKey, prependHistoryPage, prependMessagePage, runtimeHistory],
+		[beginPrependSolid, cachedEntry?.revision, captureBrowsePin, diskPage, escapeAutoScroll, expandWindowBatched, historyHasMore, isLoadingMessagePage, messages, options.sessionId, ownerKey, prependHistoryPage, prependMessagePage, runtimeHistory],
 	);
 
 	// ── 回底清理临时历史（2026-11 轮次模型）──
