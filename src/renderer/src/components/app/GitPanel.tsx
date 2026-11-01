@@ -1618,16 +1618,7 @@ export function GitPanel(props: GitPanelProps) {
 								{/* 变更区：三组折成一条扁平行列表走一个 VirtualStack（行内 Radix ContextMenu +
 					    Seti SVG 的行渲染代价随变更文件数线性增长，无虚拟化时几千文件即卡顿全应用）。 */}
 								<div ref={changesScrollRef} className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain [scrollbar-gutter:stable]">
-									<ChangesGroupsStack
-										scrollRef={changesScrollRef}
-										groups={changeGroupSpecs}
-										viewMode={changesViewMode}
-										collapsedDirs={collapsedChangeDirs}
-										onToggleDir={toggleChangeDir}
-										mutating={mutating || committing}
-										onOpenWorkspaceFileDiff={props.onOpenWorkspaceFileDiff}
-										projectRoot={props.projectRoot}
-									/>
+									<ChangesGroupsStack scrollRef={changesScrollRef} groups={changeGroupSpecs} viewMode={changesViewMode} collapsedDirs={collapsedChangeDirs} onToggleDir={toggleChangeDir} mutating={mutating || committing} onOpenWorkspaceFileDiff={props.onOpenWorkspaceFileDiff} projectRoot={props.projectRoot} />
 								</div>
 							</div>
 						)}
