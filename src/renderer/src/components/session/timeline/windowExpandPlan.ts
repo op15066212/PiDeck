@@ -4,22 +4,21 @@
  * 为什么单独成模块：这段逻辑原先只有一份「正则扫源码」的测试守着——断言代码长什么样，
  * 对行为零验证（仓库规范禁止这种写法）。抽成纯函数后才能直接喂输入、断言输出。
  *
- * 为什么需要上限：补页一路补到很早的历史时，每页都会排一批扩窗，待扩量可累计上百轮；
- * 按帧小口消费等于在一条 rAF 链上连发上百次 setState，React 的嵌套更新上限是 50，
- * 超了直接抛 #185（2026-11 真机：点大纲最上面的刻度 → 「界面渲染异常」整窗打掉）。
- * 这种量级一次性推开：多挂几十轮的开销远小于崩溃。
+ * 为什么不设「超过 N 轮就整批推开」：旧实现里 backlog > 24 时一次 setState 挂满
+ * 整个待扩量（点大纲最上面的刻度 = 一帧挂 130+ 轮），那一帧必然掉帧，用户描述为
+ * 「点跳转不流畅」。旧注释把那次真机崩溃归因成 React #185（嵌套更新上限 50），但
+ * rAF 回调里的 setState 不构成嵌套更新，这个归因站不住；更可能是单帧挂载量本身过大。
+ * 现在一律按 8 轮切片：130 轮 = 17 帧 ≈ 280ms，既不卡单帧，也不会在一条 rAF 链上
+ * 连发上百次 setState（那是 130 次，切到 17 次）。
  */
 
-/** 每帧最多挂载的轮数：一个 3 轮 cohort 拆成 2+1 两帧，避免本地 DOM 扩展在同一帧集中渲染。 */
-export const TURN_WINDOW_EXPAND_BATCH_TURNS = 2;
+/** 每帧最多挂载的轮数。8 轮约 80 条消息，是单帧能稳定渲染的量级。 */
+export const TURN_WINDOW_EXPAND_BATCH_TURNS = 8;
 
-/** 一条 rAF 链上允许逐帧消费的轮数上限，超过就一次性推开。 */
-export const TURN_WINDOW_EXPAND_MAX_CHAIN_TURNS = 24;
-
-/** 这一帧该扩几轮：待扩量为 0 返回 0，未超链上限按帧小口消费，超过则全部推开。 */
+/** 这一帧该扩几轮：待扩量为 0 返回 0，否则最多 8 轮。 */
 export function planWindowExpandBatch(backlog: number): number {
 	if (backlog <= 0) return 0;
-	return backlog > TURN_WINDOW_EXPAND_MAX_CHAIN_TURNS ? backlog : Math.min(TURN_WINDOW_EXPAND_BATCH_TURNS, backlog);
+	return Math.min(TURN_WINDOW_EXPAND_BATCH_TURNS, backlog);
 }
 
 /**

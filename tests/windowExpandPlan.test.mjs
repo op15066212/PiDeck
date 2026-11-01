@@ -1,40 +1,67 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
-import { loadTsCommonJs } from "./helpers/loadTsCommonJs.mjs";
+import { createTsSandbox } from "./helpers/createTsSandbox.mjs";
 
-/**
- * 分批扩窗的行为契约（2026-11 真机：点大纲最上面的刻度 → React #185 整窗崩溃）。
- *
- * 原来这两条只有「读源码 + 正则断言代码长什么样」的测试，对行为零验证，
- * 且仓库规范禁止该写法。逻辑抽到 windowExpandPlan 后改测输入输出。
- */
-const { planWindowExpandBatch, capWindowTurns, TURN_WINDOW_EXPAND_MAX_CHAIN_TURNS } = loadTsCommonJs("src/renderer/src/components/session/timeline/windowExpandPlan.ts");
+const load = createTsSandbox();
+const plan = load("src/renderer/src/components/session/timeline/windowExpandPlan.ts");
 
-test("待扩量未超过链上限：按帧小口消费，每帧最多 2 轮", () => {
-	assert.equal(planWindowExpandBatch(5), 2);
-	assert.equal(planWindowExpandBatch(3), 2);
-	assert.equal(planWindowExpandBatch(1), 1);
+test("backlog 为 0 或负数时不扩窗", () => {
+	assert.equal(plan.planWindowExpandBatch(0), 0);
+	assert.equal(plan.planWindowExpandBatch(-5), 0);
 });
 
-test("待扩量超过链上限：一次性推开，不再逐帧连发 setState", () => {
-	assert.equal(planWindowExpandBatch(TURN_WINDOW_EXPAND_MAX_CHAIN_TURNS + 1), TURN_WINDOW_EXPAND_MAX_CHAIN_TURNS + 1);
-	assert.equal(planWindowExpandBatch(120), 120);
+test("单帧最多 8 轮：不论 backlog 多大都不整批推开", () => {
+	for (const backlog of [1, 7, 8, 9, 24, 25, 130, 300, 1000]) {
+		const batch = plan.planWindowExpandBatch(backlog);
+		assert.ok(batch <= 8, "backlog=" + backlog + " 单帧扩了 " + batch + " 轮，超了单帧预算");
+		assert.ok(batch >= 1, "backlog=" + backlog + " 没扩任何轮，会停在原地");
+	}
 });
 
-test("链上限本身仍走逐帧路径（边界，不是一次推开）", () => {
-	assert.equal(planWindowExpandBatch(TURN_WINDOW_EXPAND_MAX_CHAIN_TURNS), 2);
+test("跳 130 轮：分 17 帧推完，不是 1 帧", () => {
+	let backlog = 130;
+	let frames = 0;
+	while (backlog > 0 && frames < 1000) {
+		backlog -= plan.planWindowExpandBatch(backlog);
+		frames += 1;
+	}
+	assert.equal(frames, Math.ceil(130 / 8));
+	assert.equal(backlog, 0);
 });
 
-test("没有待扩量时不排批次", () => {
-	assert.equal(planWindowExpandBatch(0), 0);
-	assert.equal(planWindowExpandBatch(-3), 0);
+test("逐帧消费的总量等于待扩量，不漏也不多", () => {
+	for (const total of [3, 8, 9, 100, 233]) {
+		let backlog = total;
+		let grown = 0;
+		while (backlog > 0) {
+			const batch = plan.planWindowExpandBatch(backlog);
+			grown += batch;
+			backlog -= batch;
+		}
+		assert.equal(grown, total);
+	}
 });
 
-test("窗口轮数涨到上限即停，不再随补页无限膨胀", () => {
-	assert.equal(capWindowTurns(9, 2, 10), 10);
-	assert.equal(capWindowTurns(3, 2, 10), 5);
+test("窗口封顶：到顶不再涨，但已超出的值不被缩回去", () => {
+	// 未到顶：正常相加
+	assert.equal(plan.capWindowTurns(10, 8, 30), 18);
+	// 相加会越界：钳到上限
+	assert.equal(plan.capWindowTurns(10, 8, 12), 12);
+	// 已经超过上限：保持原值（既不涨也不缩——缩回会触发一次大幅内容收缩）
+	assert.equal(plan.capWindowTurns(50, 8, 30), 50);
+	assert.equal(plan.capWindowTurns(40, 8, 30), 40);
 });
 
-test("已经超过上限的当前值不被缩回（缩回会引发贴底抖动）", () => {
-	assert.equal(capWindowTurns(12, 2, 10), 12);
+test("每次扩窗都必须真的排下一帧，不允许在 while 里同步消费完", () => {
+	// 纯函数测试证明不了「是否真的分帧」：把 planWindowExpandBatch 写对、调用方却用
+	// while 循环同步跑完，测试照样全绿而界面照样卡一帧。所以钉消费端的形状。
+	const source = readFileSync("src/renderer/src/hooks/useSessionTimelineController.ts", "utf8");
+	const start = source.indexOf("const consumeExpandBatch = useCallback(");
+	assert.ok(start > 0, "找不到 consumeExpandBatch");
+	const end = source.indexOf("}, [", start);
+	const body = source.slice(start, end);
+	assert.match(body, /if \(pendingExpandTurnsRef\.current > 0\)/, "必须显式判断剩余待扩量");
+	assert.match(body, /requestAnimationFrame\(consumeExpandBatch\)/, "剩余待扩量必须排下一帧，不能同步 while 消费完");
+	assert.doesNotMatch(body, /while\s*\(/, "不允许 while 循环同步消费");
 });
