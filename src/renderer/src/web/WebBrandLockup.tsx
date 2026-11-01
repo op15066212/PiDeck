@@ -22,7 +22,7 @@ export function WebBrandLockup() {
 			<span className="brand-wordmark truncate text-brand font-[PiDeckDepartureMono] font-bold leading-none text-foreground dark:text-white" aria-hidden="true">
 				PiDeck
 			</span>
-			<span className="mt-px shrink-0 rounded border border-border-subtle bg-muted/50 px-1 py-px font-mono text-[10px] font-medium uppercase leading-[1.3] tracking-[0.08em] text-muted-foreground">Web</span>
+			<span className="mt-px shrink-0 rounded border border-border-subtle bg-muted/50 px-1 py-px font-mono text-micro font-medium uppercase leading-[1.3] tracking-[0.08em] text-muted-foreground">Web</span>
 		</div>
 	);
 }

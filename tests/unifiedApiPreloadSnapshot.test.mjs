@@ -24,6 +24,8 @@
  *   （Wallpaper Engine 视频壁纸）各 +1 方法，命名空间数与数量锚点不变。
  * 2026-10-24 第四轮追赶 origin/dev（274 提交）：并入上游会话数据面/终端/文件管理器等改动，
  *   命名空间 77→78（新增上游域），sessions 118→116、config 48→50、git 59 不变。
+ * 2026-11-01 刷新：hostPlugins.searchMarket（插件市场双源搜索，提交 3a64d7aeb）+1 方法；
+ *   命名空间数与数量锚点不变，仅方法清单摘要变化。
  */
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
@@ -31,7 +33,7 @@ import { test } from "node:test";
 import { loadTsCommonJs } from "./helpers/loadTsCommonJs.mjs";
 
 const NS_LIST_SHA256 = "8eddbab22c377522734e7c95aa143b2dd9cf529837c7a660e5aecec3a98ce134";
-const FULL_METHODS_SHA256 = "5798730a2d2739577522795fbc278385b3b6ea30a64da2c888410c3f8b0a7054";
+const FULL_METHODS_SHA256 = "b2bd98e5484734655b1175a2169365be86732510449e7f7c783fc9ee3cf969f7";
 const NAMESPACE_COUNT = 79;
 
 /** 捕获 preload 暴露的 piDesktop；null/undefined/形态不符时显式红并给诊断（F8-6 共用）。 */

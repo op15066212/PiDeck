@@ -134,6 +134,7 @@ export function HostPluginMarketDialog({ open, onOpenChange, onFail }: HostPlugi
 						<span>{t("hostPlugins.marketSummary", { count: entries.length, registry: official, github: entries.length - official })}</span>
 					</div>
 				)}
+				{/* scroll-ok: bounded —— 市场结果双源合并后封顶 40 条（hostPluginMarket.ts MAX_SEARCH_RESULTS），卡片网格高度有界，无需虚拟化 */}
 				<div className="min-h-0 flex-1 overflow-y-auto">
 					{results === null ? (
 						<div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-border px-4 py-10 text-center">
