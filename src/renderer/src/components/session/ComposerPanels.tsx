@@ -265,11 +265,12 @@ export function QueuedPromptPanel(props: {
 	// 已 claim（sending）的行派发时就上屏了，不再算排队内容；ACP 的投递确认要等回合结算，
 	// 若继续展示，队首会在整轮里显示成「发送中」，看起来像队列没清空。
 	const visiblePrompts = visibleQueuedPrompts(props.prompts);
-	if (!sessionId || !visiblePrompts.length) return null;
 
 	const multiple = visiblePrompts.length > 1;
 	// 排队行数随消息增长；超过虚拟化门槛时只挂视口附近的行（通用件见 ui-shadcn/virtual-stack.tsx）。
 	const listRef = useRef<(HTMLUListElement & HTMLDivElement) | null>(null);
+	// hooks 必须全部在其他语句之前执行：队列由空变非空时提前返回会让 hook 数量变化，React 抛 #310。
+	if (!sessionId || !visiblePrompts.length) return null;
 	const virtualizeRows = visiblePrompts.length > VIRTUAL_STACK_MIN_ROWS;
 	// 虚拟化分支的行是 `<div data-index>` 的子节点，`li` 的父元素不再是 `ul/ol`（非法 HTML）；
 	// 两条路径各用合法标签：短列表保持 `ul > li`，虚拟化走 `div[role=list] > div[role=listitem]`。
