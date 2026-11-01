@@ -1991,8 +1991,14 @@ export function useSessionTimelineController(options: { sessionId?: string; mess
 		const heightDelta = timeline.scrollHeight - anchor.value.height;
 		const nextScrollTop = resolveTimelineTopCompensation(anchor.value.top, heightDelta);
 		if (nextScrollTop === null) {
+			// 视口贴顶（top <= HISTORY_AUTO_LOAD_THRESHOLD=8px）：**有意不补偿**——插入的内容留在上方，
+			// 用户点「加载更多」要看的就是这批更早的消息；补偿反而会让画面停在原地、像「点了没反应」。
+			// 但「不补偿」不等于「不结束整表渲染」：锚点已在下面置空、这次插入算消费完，按 beginPrependSolid
+			// 的约定就该关。漏掉这一行会让整表渲染拖到 1.5s 兜底超时，超时那一刻虚拟化接管、未挂载行
+			// 从实测高度回退估算、总高度突变 → 重排 → 视口轻跳（用户报的「点了几次，内容变多了，但有点抖」）。
 			loadMoreAnchorRef.current = undefined;
 			markProgrammaticScroll();
+			endPrependSolid();
 			return;
 		}
 		pinViewportAfterPrepend(nextScrollTop);

@@ -183,7 +183,9 @@ test("prepend scroll compensation is skipped while following bottom and pins the
 	assert.doesNotMatch(source, /timeline\.scrollTop = nextScrollTop/);
 	// 顶部不补偿路径仍需抑制本帧 scroll；守卫由代数化 rAF 清理，不能再用会
 	// 被定时窗口永久锁住的独立 boolean。
-	assert.match(source, /if \(nextScrollTop === null\) \{[\s\S]{0,180}?markProgrammaticScroll\(\);/);
+	// 窗口放宽到 600：该分支现在带「为什么不补偿」与「为什么必须 endPrependSolid」两段注释，
+	// 180 字符会被注释本身撑破（注释是正当改动，不该逼代码删注释）。
+	assert.match(source, /if \(nextScrollTop === null\) \{[\s\S]{0,600}?markProgrammaticScroll\(\);/);
 	assert.match(source, /finishProgrammaticScrollFrame\(guard, generation\)/);
 	assert.doesNotMatch(source, /programmaticScrollRef/);
 });
@@ -272,4 +274,16 @@ test("prepend solid close is owned by batch consumption, not by the window layou
 	assert.doesNotMatch(layoutEffect[0], /endPrependSolid/, "关闭整表渲染不得挂回每帧布局效应");
 	assert.match(layoutEffect[0], /pinBrowseRow\(\)/, "补位移仍必须留在这一拍");
 	assert.match(source, /\} else \{[\s\S]{0,420}?endPrependSolid\(\);/, "批次归零分支必须关闭整表渲染");
+});
+
+test("top-anchored prepend skips compensation but must still end prepend solid", () => {
+	// 视口贴顶（top <= HISTORY_AUTO_LOAD_THRESHOLD = 8px）时 resolveTimelineTopCompensation 返回 null，
+	// 脚本有意不补偿：插入内容留在上方，用户点「加载更多」要看到的就是这批更早的消息。
+	// 但「不补偿」不等于「不结束整表渲染」——漏掉 endPrependSolid 会让整表渲染拖到 1.5s 兜底超时，
+	// 超时那刻虚拟化接管、未挂载行从实测高度回退估算、总高度突变 → 重排 → 视口轻跳。
+	// 这类「分支里少一行」行为测试抓不到，只能钉源码。
+	const nullBranch = source.match(/if \(nextScrollTop === null\) \{[\s\S]*?\n\t\t\}/);
+	assert.ok(nullBranch, "找不到 nextScrollTop === null 分支");
+	assert.match(nullBranch[0], /endPrependSolid\(\)/, "贴顶分支消费完锚点后必须结束整表渲染");
+	assert.doesNotMatch(nullBranch[0], /pinViewportAfterPrepend/, "贴顶分支不得补偿，否则画面停在原地像点了没反应");
 });
