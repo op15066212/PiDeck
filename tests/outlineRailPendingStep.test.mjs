@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { loadTsCommonJs } from "./helpers/loadTsCommonJs.mjs";
 
-const { planRailPendingStep, RAIL_PENDING_MAX_ATTEMPTS } = loadTsCommonJs("src/renderer/src/components/session/timeline/outlineRailTicks.ts");
+const { planRailPendingStep, isRailLoadStalled, RAIL_PENDING_MAX_ATTEMPTS } = loadTsCommonJs("src/renderer/src/components/session/timeline/outlineRailTicks.ts");
 
 /**
  * 回归：点会话大纲最上面的刻度，弹出「这条提问还在更早的历史里，继续向上翻一会儿再点」，
@@ -52,4 +52,37 @@ test("保险丝：次数用尽才放弃，且深度覆盖整会话", () => {
 	assert.equal(planRailPendingStep({ ...BASE, attempts: RAIL_PENDING_MAX_ATTEMPTS }), "settle");
 	// 一页 3 轮：60 页 ≈ 180 轮，旧值 10 页 ≈ 30 轮不够覆盖长会话。
 	assert.ok(RAIL_PENDING_MAX_ATTEMPTS >= 40, "补页保险丝至少要覆盖 120 轮历史");
+});
+
+/**
+ * 白补判定：发过一页、没在加载、已加载条数却没涨 —— 说明这一页补不出新内容。
+ * 继续发只会空转到保险丝，而被动 effect 里连发 setState 正是 React #185 的成因。
+ */
+const STALL_BASE = {
+	previousEntryId: "e1",
+	targetEntryId: "e1",
+	previousCount: 30,
+	loadedCount: 30,
+	attempts: 1,
+	isLoadingMore: false,
+};
+
+test("补过一页但条数没涨：判为白补", () => {
+	assert.equal(isRailLoadStalled(STALL_BASE), true);
+});
+
+test("条数涨了就不算白补", () => {
+	assert.equal(isRailLoadStalled({ ...STALL_BASE, loadedCount: 33 }), false);
+});
+
+test("还没发过补页时不算白补（首次尝试必须放行）", () => {
+	assert.equal(isRailLoadStalled({ ...STALL_BASE, attempts: 0 }), false);
+});
+
+test("上一页仍在飞时不算白补（要继续等它落地）", () => {
+	assert.equal(isRailLoadStalled({ ...STALL_BASE, isLoadingMore: true }), false);
+});
+
+test("换了目标刻度时不算白补（计数相同不代表停滞）", () => {
+	assert.equal(isRailLoadStalled({ ...STALL_BASE, targetEntryId: "e2" }), false);
 });

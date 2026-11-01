@@ -7,7 +7,7 @@ import type { SessionMessageTimelineProps } from "./SessionMessageTimeline";
 import { SessionMessageTimeline } from "./SessionMessageTimeline";
 import { showNotice } from "../../utils/notice";
 import { outlineItemsBySessionIdAtomFamily, sessionHistoryMutationOverlayBySessionIdAtomFamily } from "../../atoms";
-import { isPendingRailItemId, mergeOutlineRailItems, pendingEntryIdOf, planRailJump, planRailPendingStep, RAIL_PENDING_MAX_ATTEMPTS } from "./timeline/outlineRailTicks";
+import { isPendingRailItemId, isRailLoadStalled, mergeOutlineRailItems, pendingEntryIdOf, planRailJump, planRailPendingStep, RAIL_PENDING_MAX_ATTEMPTS } from "./timeline/outlineRailTicks";
 import { useSessionOutlineDirectory } from "../../hooks/useSessionOutlineDirectory";
 import { formatTime, summarizeMessage } from "../app/AppUtils";
 import { replaceExpandedRefBlocksWithLabels } from "../../../../shared/expandedRefBlocks";
@@ -104,7 +104,14 @@ export function SessionSurfaceStage(props: { sessionId: string; sessionTimeline:
 		// 继续发只会空转到保险丝，而被动 effect 里连发 setState 正是 React #185 的直接成因
 		// （2026-11 真机：点大纲最上面的刻度 →「界面渲染异常」）。
 		const progress = railLoadProgressRef.current;
-		const noProgress = progress.entryId === pendingEntryId && pendingAttempts > 0 && progress.count === outlineItems.length && !sessionTimeline.isLoadingMoreMessages;
+		const noProgress = isRailLoadStalled({
+			previousEntryId: progress.entryId,
+			targetEntryId: pendingEntryId,
+			previousCount: progress.count,
+			loadedCount: outlineItems.length,
+			attempts: pendingAttempts,
+			isLoadingMore: sessionTimeline.isLoadingMoreMessages,
+		});
 		railLoadProgressRef.current = { entryId: pendingEntryId, count: outlineItems.length };
 		if (step === "load" && !noProgress) {
 			// 让出一轮再发：同步发下一页会让 effect → setState → effect 连成一条嵌套更新链。
