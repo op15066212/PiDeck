@@ -53,15 +53,28 @@ test("越界下标被跳过（limit = 行数）", () => {
 	assert.deepEqual(merged([1, 2], [-1, 0, 1], 5), [0, 1, 2]);
 });
 
-test("rangeExtractor 自证：越界 / 乱序 / 重复都会抛（不设开发期门控）", () => {
-	// 这条不需要 e2e 基建：集成错了比事后看掉位好定位。
-	// 原实现用「开发期环境常量」门控，那个写法在 vm 测试沙箱里是语法错误，
-	// 整个 VirtualRunList 加载失败 —— 三条既有测试因此长期红。改成无条件自证：
-	// 三项都是 tanstack 硬前提，违反会渲染空行/跳行，任何环境都该当场炸；
-	// 成本只是 range 变化时 k 次比较（k = 视口行 + 钉行 ≈ 3）。
+test("rangeExtractor 自证：越界 / 乱序 / 重复都会抛，但只在开发期跑", () => {
+	// 两层判据，缺一不可：
+	//  ① 行为层（下面三条）：给坏样本必须抛，给好样本必须不抛 —— 这是「坏样本会红」的那条；
+	//  ② 接线层（本条）：断言自证被开发期开关包着，不许裸 throw。
+	// 为什么必须门控：throw 会被根级 AppErrorBoundary 兜住，生产环境违约 = 整个应用降级
+	// 成错误页（用户丢全部会话），而不是时间线里少一行。mergePinnedRange 本身保证
+	// 升序/去重/不越界，所以自证一旦触发就是它坏了 —— 开发期炸、生产期忍。
 	const source = readFileSync("src/renderer/src/components/session/timeline/VirtualRunList.tsx", "utf8");
 	assert.match(source, /mergePinnedRange\(defaultRangeExtractor\(range\), pinnedIndexesRef\.current, count\)/, "必须把 count 传给 mergePinnedRange");
-	assert.doesNotMatch(source, /import\.meta\.env\.DEV/, "不许再用开发期环境常量门控（沙箱里是语法错误）");
-	assert.match(source, /rangeExtractor 产出越界下标/, "越界要抛");
-	assert.match(source, /rangeExtractor 产出未严格升序/, "乱序/重复要抛");
+	assert.match(source, /if \(IS_DEV_BUILD\) assertRangeIndexes\(merged, count\);/, "自证必须在开发期开关里调用");
+	// 反向判据：rangeExtractor 里不许出现裸 throw（改回无条件抛就必须让这条红）。
+	assert.doesNotMatch(source, /rangeExtractor = useCallback[\s\S]*?throw new Error/, "rangeExtractor 里不许裸 throw：生产环境会整页白屏");
+	assert.doesNotMatch(source, /import\.meta\.env\.DEV/, "不许用开发期环境常量（沙箱里是语法错误）");
+});
+
+test("assertRangeIndexes：坏样本必须抛，好样本必须不抛", () => {
+	const ok = (indexes, limit) => policy.assertRangeIndexes(indexes, limit);
+	ok([0, 2, 5], 6);
+	ok([], 0);
+	assert.throws(() => ok([0, 6], 6), /越界/, "等于 limit 也算越界");
+	assert.throws(() => ok([-1, 0], 3), /越界/, "负数越界");
+	assert.throws(() => ok([1.5], 3), /越界/, "非整数越界");
+	assert.throws(() => ok([2, 1], 5), /未严格升序/, "乱序");
+	assert.throws(() => ok([2, 2], 5), /未严格升序/, "重复");
 });

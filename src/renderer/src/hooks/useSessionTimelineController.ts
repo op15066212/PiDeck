@@ -1790,15 +1790,17 @@ export function useSessionTimelineController(options: { sessionId?: string; mess
 					if (decision.kind === "settled" && row) {
 						browsePinRef.current = { messageId, expectedViewportTop: 0 };
 						browsePinFrozenRef.current = true;
-					} else if (decision.kind === "give-up" && decision.reason === "interrupted") {
-						// 用户自己动手停了这次跳转：钉行必须交还，否则下一次布局增高
-						// （流式 token、图片加载）会把他从刚滚到的地方拽回目标行 ——
-						// 那变成「用户想滚，页面不让滚」，比跳不到位更讨厌。
+					} else if (decision.kind === "give-up" && (decision.reason === "interrupted" || decision.reason === "target-missing")) {
+						// 两条出口都要交还钉行：
+						// - interrupted：用户自己动手停了这次跳转，钉着会把他在下一次布局增高时
+						//   （流式 token、图片加载）拽回目标行，变成「想滚不让滚」。
+						// - target-missing：落位后目标行还是从 DOM 消失，说明它挂不出来（context_edit
+						//   移出展示 / 折叠区收起）。钉一条永远挂不出来的行没有意义，反而会让
+						//   pinBrowseRow 的「按容器高度差兜底」在下次增高时把视口挪一下。
 						browsePinRef.current = null;
 						browsePinFrozenRef.current = false;
 					}
-					// 其余出口保留钉行：frames/timeout 是「没追完」，target-missing 是「行暂时
-					// 不在 DOM」——留着钉让 pinnedRunKeys 继续强制挂载它，用户下一次点击能接上。
+					// frames / timeout 保留钉行：那是「没追完」而不是「追不到」，下一次点击能接上。
 					return;
 				}
 				frames += 1;

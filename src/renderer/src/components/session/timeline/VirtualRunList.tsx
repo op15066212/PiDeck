@@ -1,6 +1,19 @@
 import { defaultRangeExtractor, useVirtualizer, type Range } from "@tanstack/react-virtual";
 import { useCallback, useInsertionEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
-import { mergePinnedRange, resolveRunHeight, splitVirtualRunsByTail, VIRTUAL_ESTIMATED_RUN_HEIGHT } from "./virtualTimelinePolicy";
+import { assertRangeIndexes, mergePinnedRange, resolveRunHeight, splitVirtualRunsByTail, VIRTUAL_ESTIMATED_RUN_HEIGHT } from "./virtualTimelinePolicy";
+
+/**
+ * 开发期自证开关。
+ *
+ * 不用「开发期环境常量」那种写法：它在 vm 测试沙箱里是语法错误，整个文件加载失败
+ * （三条既有测试因此长期变红）。`typeof process` 保护让「没有 process 的环境」
+ * （测试沙箱、某些受限渲染上下文）也不崩。
+ *
+ * 判据取「明确是 development 才自证」，不是「不是 production 就自证」：环境判断失败时
+ * 落在**不自证**一侧。生产环境里自证抛错会被根级 AppErrorBoundary 兜住，整个应用降级
+ * 成错误页 —— 那不是这个断言该有的爆炸半径。
+ */
+const IS_DEV_BUILD = typeof process !== "undefined" && process.env?.NODE_ENV === "development";
 
 /**
  * 包装行的统一测量基准：flow-root 让子元素的下边距计入行高（solid 行与虚拟行同一高度基准），
@@ -308,20 +321,12 @@ export function VirtualRunList<T>(props: VirtualRunListProps<T>) {
 	const rangeExtractor = useCallback((range: Range) => {
 		const count = entriesRef.current.length;
 		const merged = mergePinnedRange(defaultRangeExtractor(range), pinnedIndexesRef.current, count) as number[];
-		// 自证（不设开发期开关）：集成错了比事后看掉位好定位。三项都是 tanstack 的硬前提——
-		// 越界下标会取到 undefined 渲染空行，无序/重复会让它跳过行。
-		// 不用「开发期环境常量」门控：那个写法在 vm 测试沙箱里是语法错误，整个文件加载失败。
-		// 成本只是 range 变化时 k 次比较（k = 视口行 + 钉行 ≈ 3）。
-		{
-			for (let i = 0; i < merged.length; i += 1) {
-				if (merged[i] < 0 || merged[i] >= count) {
-					throw new Error("[VirtualRunList] rangeExtractor 产出越界下标 " + merged[i] + "（count=" + count + "）");
-				}
-				if (i > 0 && merged[i] <= merged[i - 1]) {
-					throw new Error("[VirtualRunList] rangeExtractor 产出未严格升序/重复下标：" + merged[i - 1] + " then " + merged[i]);
-				}
-			}
-		}
+		// 开发期自证：三项是 tanstack 的硬前提（越界会渲染空行、无序/重复会跳行）。
+		// 只在开发期炸：mergePinnedRange 本身就保证升序/去重/不越界，所以这条断言一旦
+		// 触发就是它坏了；生产环境里 throw 会被根级 AppErrorBoundary 兜住，用户丢的是
+		// 整个应用而不是一行空白 —— 生产降级成不炸才是对的取舍。
+		// 门控变量见文件顶部的 IS_DEV_BUILD：不用 import.meta.env（沙箱里是语法错误）。
+		if (IS_DEV_BUILD) assertRangeIndexes(merged, count);
 		return merged;
 	}, []);
 

@@ -132,3 +132,26 @@ export function mergePinnedRange(base: readonly number[], pinned: readonly numbe
 	merged.sort((a, b) => a - b);
 	return merged;
 }
+
+/**
+ * 开发期自证：rangeExtractor 的产出必须**严格升序、无重复、无越界**。
+ *
+ * 为什么单独抽成函数：断言本身要能被单测喂坏样本（越界 / 乱序 / 重复都必须抛），
+ * 而不是只靠「源码里出现过这几个字符串」钉住。放在这里是因为它是纯逻辑，不碰 DOM。
+ *
+ * 为什么它只该在开发期跑：mergePinnedRange 已经保证这三件事（见上一段注释），
+ * 所以这条断言一旦触发，说明 mergePinnedRange 自己坏了。生产环境里 throw 会被
+ * 根级 AppErrorBoundary 兜住 → 整个应用降级成错误页，用户丢的是全部会话，
+ * 不是时间线里一行空白。开发期炸、生产期忍，是正确的取舍。
+ */
+export function assertRangeIndexes(indexes: readonly number[], limit: number): void {
+	for (let i = 0; i < indexes.length; i += 1) {
+		const index = indexes[i];
+		if (!Number.isInteger(index) || index < 0 || index >= limit) {
+			throw new Error("[virtualTimelinePolicy] range 下标越界：" + index + "（limit=" + limit + "）");
+		}
+		if (i > 0 && index <= indexes[i - 1]) {
+			throw new Error("[virtualTimelinePolicy] range 未严格升序/重复：" + indexes[i - 1] + " then " + index);
+		}
+	}
+}
