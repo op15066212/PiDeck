@@ -175,7 +175,10 @@ test("prepend scroll compensation is skipped while following bottom and pins the
 	// 跟底中/浏览代数过期（autoScrollRef=true 或 generation 不匹配）不恢复旧锚点：
 	// 贴底引擎负责生长补偿，迟到分页也不得把刚回底的视口重新插页；
 	// 滚动翻页钉正在看的那一轮（pinBrowseRow），禁止按整页 scrollHeight 差写原生 scrollTop。
-	assert.match(source, /if \(autoScrollRef\.current \|\| anchor\.value\.generation !== historyBrowseGenerationRef\.current\) \{\n\s*loadMoreAnchorRef\.current = undefined;\n\s*return;\n\s*\}/);
+	// 早退分支必须同时做两件事：释放锚点 + 释放 prependSolid。0a3bab5 在两者之间补了
+	// endPrependSolid()（否则 beginPrependSolid 只能靠 1.5s 超时解除，期间强制整表渲染），
+	// 原断言要求 return 紧跟 loadMoreAnchorRef 赋值，补了这一行就红——是测试跟不上代码。
+	assert.match(source, /if \(autoScrollRef\.current \|\| anchor\.value\.generation !== historyBrowseGenerationRef\.current\) \{\n\s*loadMoreAnchorRef\.current = undefined;[\s\S]{0,240}?endPrependSolid\(\);\n\s*return;\n\s*\}/);
 	assert.match(source, /if \(anchor\.value\.preserveAtTop\) \{\n\s*pinBrowseRow\(\);/);
 	assert.doesNotMatch(source, /timeline\.scrollTop = nextScrollTop/);
 	// 顶部不补偿路径仍需抑制本帧 scroll；守卫由代数化 rAF 清理，不能再用会
@@ -227,4 +230,33 @@ test("auto history load consumes engine intent without a competing scroll listen
 	assert.match(source, /if \(isProgrammaticScrollActive\(programmaticScrollGuardRef\.current, performance\.now\(\)\)\) return;/);
 	assert.match(source, /HISTORY_AUTO_LOAD_THRESHOLD/);
 	assert.doesNotMatch(source, /timeline\.addEventListener\("scroll", onScroll/);
+});
+
+test("prepend rejection surfaces a retryable message instead of failing silently", () => {
+	// D-R1（2026-11）：prependSessionMessagePageAtom 四个前置（!current / source !== "disk" /
+	// revision !== expectedRevision / page.nextBefore !== before）任一不满足即 return false，
+	// 而两个调用点原先只写 if、没有 else，.catch 只接 IPC 抛错、接不到 false —— 数据没进缓存、
+	// 界面没变化、也没有提示，与「点加载更多没反应」同族。
+	// revision 被抬高（翻页在途期间有新内容落盘）是可立刻重试的（游标 before 未变），
+	// 报成「加载失败」会把可重试说成坏了，因此两处 else 都必须按 revisionMoved 分文案。
+	const elseBlocks = source.match(/\} else \{\s*\/\/ prepend 被拒[\s\S]*?setLoadMoreError\(/g) ?? [];
+	assert.equal(elseBlocks.length, 2, "disk 与 runtime 两处 prepend 调用点都必须有 else，否则失败仍然静默");
+	assert.match(source, /const revisionMoved = \(cachedEntry\?\.revision \?\? 0\) !== expectedRevision;/);
+	assert.match(source, /revisionMoved \? t\("timeline\.loadMoreRetryable"\) : t\("timeline\.loadMoreFailed"\)/);
+	// 三语必须同时具备：en-US 声明是 Record<TranslationKey, string>，缺一个 key 就 typecheck 红。
+	for (const lang of ["zh-CN", "en-US", "zh-TW"]) {
+		const copy = readFileSync(`src/renderer/src/i18n/rendererCopy.${lang}.ts`, "utf8");
+		assert.match(copy, /"timeline\.loadMoreRetryable":/, `${lang} 缺 loadMoreRetryable`);
+	}
+});
+
+test("prepend solid frame close is invalidated by token so a later begin survives", () => {
+	// endPrependSolid 的「推迟一帧关掉整表渲染」原本不可取消：上一页的关闭会在下一帧无条件
+	// setPrependSolid(false)。若同一帧内又 begin 过（连点按钮、或多条路径同时补页），整表渲染
+	// 被提前撤掉 → 插进来的行随即被虚拟化卸载 → pinBrowseRow 找不到钉住的行、位移补不上，
+	// 表现为「内容变多了，但视口轻轻跳一下」。
+	// 这类守卫删掉后所有行为测试都不会红（只在竞态下失效），只能用源码断言钉住。
+	assert.match(source, /const token = \+\+prependSolidTokenRef\.current;/, "end 排帧前必须取代数");
+	assert.match(source, /if \(prependSolidTokenRef\.current !== token\) return;/, "rAF 回调必须比对代数，过期即放弃关闭");
+	assert.match(source, /const beginPrependSolid = useCallback\(\(\) => \{\n\s*prependSolidTokenRef\.current \+= 1;/, "begin 必须递增代数以作废旧帧");
 });

@@ -802,10 +802,16 @@ export function useSessionTimelineController(options: { sessionId?: string; mess
 	 */
 	const [prependSolid, setPrependSolid] = useState(false);
 	const prependSolidTimeoutRef = useRef<number | undefined>(undefined);
+	// 整表渲染的「代数」：begin/end 都递增，end 排下的 rAF 回调比对代数，过期即放弃。
+	// 没有它时，上一页的 end 会在下一帧无条件 setPrependSolid(false)——若同一帧内又 begin 过
+	// （连点按钮、或多条路径同时补页），整表渲染被提前撤掉，插进来的行随即被虚拟化卸载，
+	// pinBrowseRow 找不到钉住的行、位移补不上，表现为「内容变多了，但视口轻轻跳一下」。
+	const prependSolidTokenRef = useRef(0);
 	// 与 autoScroll 初始值保持一致（有锚点的会话首帧即不跟底），避免首帧 ref/state 不一致
 	const autoScrollRef = useRef(autoScroll);
 	/** 顶部插入期间开整表渲染；插入被消费（pin 补偿做完）或超时后关。 */
 	const beginPrependSolid = useCallback(() => {
+		prependSolidTokenRef.current += 1;
 		setPrependSolid(true);
 		if (prependSolidTimeoutRef.current !== undefined) window.clearTimeout(prependSolidTimeoutRef.current);
 		// 1.5s 兜底：请求失败、或这一页恰好没有新轮次时不会有「消费」事件，必须自己解除。
@@ -821,7 +827,13 @@ export function useSessionTimelineController(options: { sessionId?: string; mess
 		}
 		// 推迟一帧：pin 补偿写在 useLayoutEffect 里，同帧关掉会让 React 立刻把行换回虚拟行，
 		// 补偿结果随之作废（切回虚拟行会重新挂载不同 DOM）。
-		window.requestAnimationFrame(() => setPrependSolid(false));
+		// 取代数后再排帧：回调执行时若代数已变（期间又 begin 过），说明这次插入还没被消费，
+		// 必须放弃关闭，否则整表渲染被提前撤掉、pin 补偿落空。
+		const token = ++prependSolidTokenRef.current;
+		window.requestAnimationFrame(() => {
+			if (prependSolidTokenRef.current !== token) return;
+			setPrependSolid(false);
+		});
 	}, []);
 	// 卸载时清掉兜底定时器：会话切走/面板关闭后它还会 fire 一次 setState（React 18 静默忽略，
 	// 但那是「靠框架宽容活着」，不是我们想要的状态机）。
