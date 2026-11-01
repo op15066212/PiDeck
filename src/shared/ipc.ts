@@ -1129,9 +1129,11 @@ export const ipcChannels = {
 	agentMemoryStatus: "agent-memory:status",
 	/** 清空会话/记忆索引（Markdown 真值不动，下次检索自动重建） */
 	agentMemoryClearIndex: "agent-memory:clear-index",
-	/** 导出记忆包（弹保存对话框；只含全局与项目作用域） */
+	/** 导出记忆包（弹保存对话框；只含全局与项目作用域，可按勾选裁剪） */
 	agentMemoryExport: "agent-memory:export",
-	/** 导入记忆包（弹打开对话框；按内容去重合并，墓碑优先） */
+	/** 选包并预览：只读，导入弹窗据此勾选条目与提示冲突 */
+	agentMemoryPreview: "agent-memory:preview",
+	/** 按预览的勾选与冲突策略导入（不传路径就先弹打开对话框） */
 	agentMemoryImport: "agent-memory:import",
 	/** 逐条列出记忆（含内容与作用域），供设置页「记忆」tab 浏览 */
 	agentMemoryList: "agent-memory:list",

@@ -42,6 +42,8 @@ export interface AgentMemoryEntry {
 	projectName: string;
 	/** 规范化内容键（去重/墓碑同口径）。 */
 	key: string;
+	/** 导出弹窗的勾选键（由 `sync.mjs` 的 `exportEntryId` 按语义内容算出）。 */
+	exportId: string;
 	content: string;
 	chars: number;
 	/** `failure` 的分类；其他目标为空串。 */
@@ -82,9 +84,62 @@ export interface AgentMemoryImportResult {
 	tombstoned: number;
 	rejected: number;
 	removed: number;
+	/** 同首行冲突被包内版本替换掉的条数（只有 `conflictPolicy: "overwrite"` 会非零）。 */
+	replaced: number;
 	scopes: string[];
 	/** 包内标注的来源设备名（旧包可能为空）。 */
 	device: string;
+}
+
+/** 包内一条记忆在本机的处境。 */
+export type AgentMemoryBundleEntryStatus = "new" | "duplicate" | "conflict" | "tombstoned" | "invalid";
+
+export interface AgentMemoryBundleEntryPreview {
+	/** 跨机器身份（由内容算出）；`invalid` 条目为空串。 */
+	id: string;
+	/** 落盘目标（`memory` / `user` / `failure` / `standing`）；`invalid` 条目为空串。 */
+	target: string;
+	/** `global` 或 `project`。 */
+	scope: string;
+	/** 项目作用域键；全局为空串。 */
+	projectId: string;
+	content: string;
+	category: string;
+	status: AgentMemoryBundleEntryStatus;
+	/** `invalid` 的原因码（`device-scope` / `unsafe-content` / `entry-invalid`）。 */
+	reason: string;
+	/** 本地对应的那条：`duplicate` 是同一条原文，`conflict` 是待替换的旧版本。 */
+	localContent: string;
+}
+
+export interface AgentMemoryBundleTombstonePreview {
+	target: string;
+	projectId: string;
+	at: string;
+	/** 本地还留着的同一条内容；空串表示本地已经没有了。 */
+	localContent: string;
+}
+
+export interface AgentMemoryBundlePreview {
+	exportedAt: string;
+	device: string;
+	entries: AgentMemoryBundleEntryPreview[];
+	counts: { total: number; new: number; duplicate: number; conflict: number; tombstoned: number; invalid: number };
+	tombstones: AgentMemoryBundleTombstonePreview[];
+}
+
+/** 选包结果：用户取消时只有 `canceled`。 */
+export type AgentMemoryBundlePeekOutcome = { canceled: true } | { canceled: false; filePath: string; preview: AgentMemoryBundlePreview };
+
+export interface AgentMemoryImportOptions {
+	/** 已选好的包路径（导入弹窗确认时回传，免二次弹框）。 */
+	filePath?: string;
+	/** 只导入这些条目 id；`null`/省略 = 全部。 */
+	selection?: string[] | null;
+	/** 同首行冲突策略：`append` 都留（默认）/ `overwrite` 替换本地那条。 */
+	conflictPolicy?: "append" | "overwrite";
+	/** 是否按包内墓碑同步删除本地条目（默认 true）。 */
+	applyTombstones?: boolean;
 }
 
 /** 统一结果信封：错误只以稳定码跨进程，不带本机路径。 */

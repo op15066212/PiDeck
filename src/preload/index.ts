@@ -272,8 +272,9 @@ const piDeckMcp: PiDeckMcpDesktopApi = {
 const agentMemory = {
 	status: () => ipcRenderer.invoke(ipcChannels.agentMemoryStatus) as Promise<import("../shared/types/agentMemory").AgentMemoryResult<import("../shared/types/agentMemory").AgentMemoryStatus>>,
 	clearIndex: () => ipcRenderer.invoke(ipcChannels.agentMemoryClearIndex) as Promise<import("../shared/types/agentMemory").AgentMemoryResult<{ removed: number }>>,
-	exportBundle: () => ipcRenderer.invoke(ipcChannels.agentMemoryExport) as Promise<import("../shared/types/agentMemory").AgentMemoryResult<import("../shared/types/agentMemory").AgentMemoryExportOutcome>>,
-	importBundle: () => ipcRenderer.invoke(ipcChannels.agentMemoryImport) as Promise<import("../shared/types/agentMemory").AgentMemoryResult<import("../shared/types/agentMemory").AgentMemoryImportResult>>,
+	exportBundle: (selection?: string[] | null) => ipcRenderer.invoke(ipcChannels.agentMemoryExport, { selection: selection ?? null }) as Promise<import("../shared/types/agentMemory").AgentMemoryResult<import("../shared/types/agentMemory").AgentMemoryExportOutcome>>,
+	previewBundle: (filePath?: string) => ipcRenderer.invoke(ipcChannels.agentMemoryPreview, filePath ? { filePath } : {}) as Promise<import("../shared/types/agentMemory").AgentMemoryResult<import("../shared/types/agentMemory").AgentMemoryBundlePeekOutcome>>,
+	importBundle: (options?: import("../shared/types/agentMemory").AgentMemoryImportOptions) => ipcRenderer.invoke(ipcChannels.agentMemoryImport, options ?? {}) as Promise<import("../shared/types/agentMemory").AgentMemoryResult<import("../shared/types/agentMemory").AgentMemoryImportResult>>,
 	list: () => ipcRenderer.invoke(ipcChannels.agentMemoryList) as Promise<import("../shared/types/agentMemory").AgentMemoryResult<import("../shared/types/agentMemory").AgentMemoryEntryList>>,
 	deleteEntry: (input: { target: string; projectId?: string; key: string }) => ipcRenderer.invoke(ipcChannels.agentMemoryDeleteEntry, input) as Promise<import("../shared/types/agentMemory").AgentMemoryResult<{ removed: number }>>,
 };

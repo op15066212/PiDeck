@@ -32,14 +32,7 @@ export function AgentMemoryTab({ draft, updateDraft, isDirty }: AgentMemoryTabPr
 	return (
 		<div className="flex flex-col">
 			<SettingsSection id="settings-section-memory-switches" title={t("settings.agentMemorySection")} description={t("settings.agentMemorySectionDesc")}>
-				<SettingSwitchRow
-					anchor="memory-enabled"
-					title={t("settings.agentMemoryEnabled")}
-					description={t("settings.agentMemoryEnabledDesc")}
-					checked={draft.agentMemoryEnabled ?? false}
-					dirty={isDirty("agentMemoryEnabled")}
-					onChange={(checked) => updateDraft({ agentMemoryEnabled: checked })}
-				/>
+				<SettingSwitchRow anchor="memory-enabled" title={t("settings.agentMemoryEnabled")} description={t("settings.agentMemoryEnabledDesc")} checked={draft.agentMemoryEnabled ?? false} dirty={isDirty("agentMemoryEnabled")} onChange={(checked) => updateDraft({ agentMemoryEnabled: checked })} />
 				{/* 自动学习会真的调模型（花钱），与「启用」分两格开关；主开关关着时这一格没有意义。 */}
 				<SettingSwitchRow
 					anchor="memory-auto-learn"

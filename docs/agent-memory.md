@@ -80,14 +80,22 @@
 { format: "pideck-agent-memory", version: 1, exportedAt, device: { id, name }, entries[], tombstones[] }
 ```
 
-**合并语义（只有一套，不给多种模式）**：
+**条目身份是内容算出来的**：`exportEntryId = 目标|作用域|作用域键|归一化内容`（折叠空白 + 转小写）。导出弹窗的勾选、导入的去重都靠它，所以 Markdown 里不存 id，手改也不会打破身份。
 
-- **并集**：本地独有与包内独有的都留下，不覆盖、不删本地。
-- **按内容去重**：折叠空白 + 转小写相等即同一条。记忆是「一句话事实」而不是可并发编辑的文档；不引入条目 id，Markdown 才能保持干净、手改不破坏身份。
-- **删除靠墓碑传播**：`memory_remove` 会记一条墓碑（内容键 + 作用域）。导入时包内墓碑优先——A 机删掉的内容，B 机导入后跟着删，且以后导旧包也不会复活。墓碑上限 500 条，只服务「不该复活」，不是审计日志。
+**搬运前先看一眼清单**（导出与导入都是两步：先预览，再确认）：
+
+- **导出**：弹窗列出可导出条目（全局 / 各项目），默认全选，可以取消；只把勾中的条目写进包。设备作用域的条目不在列表里——它们描述这台机器的路径，换台机器就是错的。
+- **导入**：先读包并**只读预览**（`previewBundle`，不落盘），每条标成 `new` / `duplicate` / `conflict` / `tombstoned` / `invalid`（后两类带 `reason`: `device-scope` / `unsafe-content` / `tombstone`），冲突项并排给出本地那一版原文。用户勾选要并入的条目，再选冲突处理与墓碑同步。
+
+**合并语义**：
+
+- **并集**：本地独有与包内独有的都留下；`duplicate`（内容完全相同）直接跳过。
+- **冲突按「首行」判定**：同 target + 同作用域 + 首行相同、正文不同 = 同一条记忆的两个版本 → `conflict`。整句首行相同几乎不可能是巧合，这比引入条目 id 更符合「一句话事实」的形态。
+- **冲突策略二选一**：`append`（默认，两版都留，下次由人或 Agent 手动合并）/ `overwrite`（包里的替换本地那条，`replaced` 计数）。
+- **删除靠墓碑传播**：`memory_remove` 会记一条墓碑（内容键 + 作用域）。导入时包内墓碑优先（包里有删除又有新增时，删除优先）——A 机删掉的内容，B 机导入后跟着删，且以后导旧包也不会复活。墓碑上限 500 条，只服务「不该复活」，不是审计日志。这步可以在导入弹窗里关掉（只做新增/替换）。
 - **设备专属记忆永不出设备**：`devices/<key>/` 下的条目不进包；包里带设备条目的也一律拒收（别的机器的盘符在本机是错的）。
 - **导入内容同样不可信**：不可见字符/注入句式/疑似密钥、未知 target、超 2000 字符、空条目 → 计入 `rejected`，不中断整次导入。整包格式或版本不对则直接报错，不做半截导入。
-- **幂等**：同一个包导两次，第二次 `added: 0`。
+- **幂等**：同一个包按同样的勾选导两次，第二次 `added: 0`。
 
 ### 4.5.1 设置页：「记忆」tab
 
@@ -99,7 +107,7 @@
 
 **能删不能改**：改写一条记忆的语义（去重键、预算裁剪、墓碑）都在工具层，设置页再放一个编辑器等于把那套规则抄第二遍；想改内容就让 Agent `memory_replace`，想改措辞就删掉再说一遍。删除与列表共用同一套内容规范化（`normalizeKey`），所以列表给的 `key` 一定能删掉它自己那一行——这条由 `tests/agentMemoryEntryList.test.mjs` 守着。全局/项目作用域的删除会写墓碑（旧导出包不会复活它），设备作用域不写（那类条目本来就不参与导出导入）。
 
-IPC：`agentMemory:status | clear-index | export | import | list | delete-entry`（`src/main/ipc/agentMemoryIpc.ts`），只接受主框架来源、入参校验、错误以 `{ok:false,code}` 返回而不是抛。
+IPC：`agentMemory:status | clear-index | export | preview-bundle | import | list | delete-entry`（`src/main/ipc/agentMemoryIpc.ts`），只接受主框架来源、入参校验、错误以 `{ok:false,code}` 返回而不是抛。导出与导入都由弹窗发起：`export` 收勾选 id 数组，`import` 收 `{filePath, selection, conflictPolicy, applyTombstones}`，`preview-bundle` 只读返回包里每条的状态。
 
 ## 4.6 学习循环（宿主侧，默认关）
 
@@ -140,7 +148,8 @@ DSH 不走 MCP（`src/main/dsh/` 里没有 MCP 客户端），所以工具面进
 node --test tests/agentMemoryServer.test.mjs   # 工具层 + 协议层（真进程走 stdio）
 node --test tests/agentMemoryMounts.test.mjs   # 挂载形态、mcp.json 合并/幂等/可撤销、开关动作、项目键
 node --test tests/agentMemorySettings.test.mjs  # 开关默认关、非法入参、渲染层与主进程接线
-node --test tests/agentMemorySync.test.mjs     # 导出形状、并集导入、墓碑、设备作用域
+node --test tests/agentMemorySync.test.mjs     # 导出形状/勾选裁剪、预览五类状态、冲突策略、墓碑、设备作用域
+node --test tests/agentMemoryBundleDialogs.test.mjs # 导入导出必须先弹窗、勾选与策略一路传到主进程、词典键齐全
 node --test tests/agentMemoryEntryList.test.mjs # 条目浏览：列表 key 可删、只删一行、墓碑、非法入参
 node --test tests/agentMemoryLearn.test.mjs    # 学习循环：水位、失败不推、闸门
 node --test tests/agentMemoryAcpE2E.test.mjs   # ACP 真进程：mcpServers 下发与工具调用
@@ -148,7 +157,7 @@ node --test tests/zhTwCopy.test.mjs            # 改了 zh-CN 词典后必须重
 npm run typecheck
 ```
 
-守卫测试固定的行为（含学习循环：不白调模型、失败不推水位、写入过扫描闸门）：重复写入幂等、目标隔离、写入扫描拒绝、替换/删除歧义报错、CJK 子串检索、target 过滤不漏、会话指纹未变时跳过、追加后整份重灌不重复、`system` 消息不入库、fork 会话共享消息 id 时两边都要入索引、`cwd` 必须能派生出项目键、mcp.json 损坏时不覆盖、打包/开发两态脚本路径、导出不含设备记忆、导入幂等且坏条目不断任务、墓碑双向传播、设备记忆可检索且不进包、记忆 tab 的条目清单给的 key 正好能删掉它自己那一行。
+守卫测试固定的行为（含学习循环：不白调模型、失败不推水位、写入过扫描闸门）：重复写入幂等、目标隔离、写入扫描拒绝、替换/删除歧义报错、CJK 子串检索、target 过滤不漏、会话指纹未变时跳过、追加后整份重灌不重复、`system` 消息不入库、fork 会话共享消息 id 时两边都要入索引、`cwd` 必须能派生出项目键、mcp.json 损坏时不覆盖、打包/开发两态脚本路径、导出不含设备记忆、导入幂等且坏条目不断任务、墓碑双向传播、设备记忆可检索且不进包、记忆 tab 的条目清单给的 key 正好能删掉它自己那一行、预览不写盘、按勾选裁剪导入导出（`overwrite` 让旧版本真的消失）、关掉墓碑同步就不删本地条目。
 
 ## 8. 与 hermes 的差异
 

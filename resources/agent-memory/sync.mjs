@@ -7,18 +7,23 @@
  * 索引版本、rowid、FTS 重建；导出条目则是幂等的——导进去以后索引会按文件重建。
  * 用户还能用任何编辑器看这个包（它就是个带 meta 的条目清单）。
  *
- * ## 合并语义（唯一一套，不给多个模式）
+ * ## 条目身份（没有 id，只有内容）
  *
- * - **按内容去重**：`normalizeKey`（折叠空白 + 转小写）相等的条目视为同一条。
- *   记忆是「一句话事实」，不是可并发的文档，内容相同即视为同一条最省心；
- *   不引入条目 id 的好处是 Markdown 保持干净、手改不会打破身份。
- * - **并集**：本地独有与包内独有的都保留，不覆盖、不删本地。
+ * 真值是可手改的 Markdown，条目没有 id；身份 = `目标|作用域|作用域键|归一化内容`。
+ * 同一份内容在任何机器上算出同一个 id，所以「勾选某几条导出」「导入时只挑几条」
+ * 都能稳定对上，而 Markdown 保持干净、手改不会打破身份。
+ *
+ * ## 合并语义
+ *
+ * - **按内容去重**：`normalizeKey`（折叠空白 + 转小写）相等的条目视为同一条，导入即跳过。
+ * - **同首行 = 同一条的两个版本**：首行（一句话事实的主体）相同、正文不同 → 冲突。
+ *   由用户选 `append`（都留）或 `overwrite`（用包里的替换本地那条）。
  * - **删除靠墓碑传播**：A 机删掉的条目记一条墓碑（内容哈希），B 机导入时会跳过它
- *   并删掉自己那份。否则「删了又回来」是同步里最烦人的失败模式。
+ *   并删掉自己那份；否则「删了又回来」是同步里最烦人的失败模式。墓碑可整体关掉。
  * - **设备专属记忆不出设备**：`devices/` 下的条目不进包（它们描述本机路径/盘符，
  *   拿到别的机器上是错的），也不参与导入。
  *
- * 刻意**不**实现：双向自动同步、冲突标记、条目级时间戳合并。记忆的量级是几十到几百条，
+ * 刻意**不**实现：双向自动同步、条目级时间戳合并、三方 diff。记忆的量级是几十到几百条，
  * 一次导入几百条是毫秒级；把一个分布式协议塞进来，收益远小于维护成本。
  */
 
@@ -139,18 +144,39 @@ function fromBundleEntry(entry) {
 	return formatFailureEntry(category, entry.content);
 }
 
+/* ───────────────────────────── 条目身份 ─────────────────────────── */
+
+/**
+ * 条目的跨机器身份：`目标|作用域|作用域键|归一化内容`。
+ *
+ * 导出弹窗的勾选、导入弹窗的勾选与去重都靠它，而它就是「内容算出来的」——
+ * 所以不需要在 Markdown 里存 id，手改也不会打破身份。
+ */
+export function exportEntryId({ target, scope, projectKey = "", content }) {
+	return `${target}|${scope === "project" ? "project" : "global"}|${projectKey}|${normalizeKey(content)}`;
+}
+
+/** 首行键：判断「同一条记忆的两个版本」。整句首行相同几乎不可能是巧合，正文不同即视为冲突。 */
+function firstLineKey(content) {
+	return normalizeKey(String(content).split("\n", 1)[0] ?? "");
+}
+
 /* ───────────────────────────── 导出 ───────────────────────────── */
 
 /**
  * 生成导出包的数据（纯函数，不碰磁盘路径以外的状态）。
  * @returns {{ format: string, version: number, exportedAt: string, device: {id: string, name: string}, entries: object[], tombstones: object[] }}
  */
-export function buildExportBundle(root, { exportedAt = new Date().toISOString() } = {}) {
+export function buildExportBundle(root, { exportedAt = new Date().toISOString(), selection = null } = {}) {
 	const device = readDeviceProfile(root);
+	// `null` = 全导（无 UI 场景、旧调用）；给了数组则只装勾选的那些。
+	const wanted = selection === null ? null : new Set(selection);
 	const entries = [];
 	for (const { target, scope, projectId } of listSharedScopes(root)) {
 		for (const block of parseEntries(readRaw(targetFilePath(root, target, projectId)))) {
-			entries.push(toBundleEntry(target, scope, projectId, block));
+			const entry = toBundleEntry(target, scope, projectId, block);
+			if (wanted && !wanted.has(exportEntryId(entry))) continue;
+			entries.push(entry);
 		}
 	}
 	return { format: BUNDLE_FORMAT, version: BUNDLE_VERSION, exportedAt, device, entries, tombstones: readTombstones(root) };
@@ -173,32 +199,52 @@ export function validateBundle(value) {
 }
 
 /**
- * 合并导入。
+ * 分析包与本地状态的差异。
  *
- * 顺序：先按包内墓碑删掉本地对应条目，再逐条并入。这样「同一个包里既有删除又有新增」
- * 时语义明确：墓碑优先于新增（同一条内容同时被删和被加，说明对面也没想清楚，保守地删）。
+ * 导入弹窗（勾选、冲突提示）与 `mergeBundle`（真正落盘）读的是**同一份判断**，
+ * 所以不会出现「弹窗说新增 3 条、导完只加了 2 条」这种自相矛盾。
  *
- * @returns {{ added: number, duplicate: number, tombstoned: number, rejected: number, removed: number, scopes: string[], device: string }}
+ * @returns {{ preview: object, groups: Map<string, object> }}
  */
-export function mergeBundle(root, value, { localDeviceKey = deviceScopeId(root) } = {}) {
+function analyzeBundle(root, value, { localDeviceKey = deviceScopeId(root) } = {}) {
 	const bundle = validateBundle(value);
 	const localTombstones = readTombstones(root);
 	const blocked = tombstoneIndex([...localTombstones, ...(Array.isArray(bundle.tombstones) ? bundle.tombstones : [])]);
 
-	// 1) 按目标分组，减少文件读写次数（一个作用域一次「读 → 改 → 写」）。
+	// 一个作用域只读一次文件：byKey 查「一模一样的条目」，byHead 查「同一条的另一个版本」。
 	const groups = new Map();
-	const groupFor = (target, projectId) => {
-		const key = `${target}|${projectId}`;
-		if (!groups.has(key)) groups.set(key, { target, projectId, blocks: [], index: null });
-		return groups.get(key);
+	const groupFor = (target, projectKey) => {
+		const groupKey = `${target}|${projectKey}`;
+		const cached = groups.get(groupKey);
+		if (cached) return cached;
+		const blocks = dedupeEntries(parseEntries(readRaw(targetFilePath(root, target, projectKey))));
+		const byKey = new Map();
+		const byHead = new Map();
+		blocks.forEach((block, index) => {
+			const semantic = target === "failure" ? parseFailureEntry(block).content : block;
+			byKey.set(normalizeKey(semantic), index);
+			const head = firstLineKey(semantic);
+			// 同首行有多条时只记第一条：覆盖只替换它，其余同首行的条目当独立记忆留着。
+			if (head && !byHead.has(head)) byHead.set(head, index);
+		});
+		const group = { target, projectKey, blocks, byKey, byHead, drop: new Set(), append: [] };
+		groups.set(groupKey, group);
+		return group;
 	};
+
+	const entries = [];
+	const counts = { total: 0, new: 0, duplicate: 0, conflict: 0, tombstoned: 0, invalid: 0 };
 	const scopeNames = new Set();
-	let rejected = 0;
-	let tombstoned = 0;
 
 	for (const raw of bundle.entries) {
+		counts.total += 1;
+		const reject = (reason) => {
+			counts.invalid += 1;
+			const text = isPlainObject(raw) && typeof raw.content === "string" ? raw.content.slice(0, MAX_BUNDLE_ENTRY_CHARS) : "";
+			entries.push({ id: "", target: "", scope: "", projectId: "", content: text, category: "", status: "invalid", reason, localContent: "" });
+		};
 		if (!isPlainObject(raw)) {
-			rejected += 1;
+			reject("entry-not-object");
 			continue;
 		}
 		// 包里项目作用域记作 target=memory + scope=project；但工具面的说法是 target=project，
@@ -210,60 +256,156 @@ export function mergeBundle(root, value, { localDeviceKey = deviceScopeId(root) 
 		// 设备专属条目永不出设备：别的机器的路径类事实在本机是错的，导入只会带来误导。
 		// 判空再比：全局条目的 projectKey 也是空串，直接比会把所有全局记忆当设备记忆拒掉。
 		if (raw.scope === "device" || (localDeviceKey && raw.projectKey === localDeviceKey)) {
-			rejected += 1;
+			reject("device-scope");
 			continue;
 		}
 		if (!target || (scope === "project" && !projectKey)) {
-			rejected += 1;
+			reject("entry-invalid");
 			continue;
 		}
 		const content = typeof raw.content === "string" ? raw.content.trim() : "";
 		if (!content || content.length > MAX_BUNDLE_ENTRY_CHARS) {
-			rejected += 1;
+			reject("entry-invalid");
 			continue;
 		}
 		// 从别的设备来的内容同样是不可信输入：不可见字符/注入模板/密钥一律不入库。
 		if (scanMemoryContent(content)) {
-			rejected += 1;
+			reject("unsafe-content");
 			continue;
 		}
 		const block = fromBundleEntry({ ...raw, target, scope, projectKey, content });
-		const key = normalizeKey(target === "failure" ? parseFailureEntry(block).content : block);
-		const tombKey = `${target}|${scope}|${projectKey}|${key}`;
-		if (blocked.has(tombKey)) {
-			tombstoned += 1;
+		const semantic = target === "failure" ? parseFailureEntry(block).content : block;
+		const category = target !== "failure" ? "" : FAILURE_CATEGORIES.includes(raw.category) ? raw.category : "insight";
+		const base = { id: exportEntryId({ target, scope, projectKey, content: semantic }), target, scope, projectId: projectKey, content: semantic, category, reason: "", localContent: "" };
+		if (blocked.has(`${target}|${scope}|${projectKey}|${normalizeKey(semantic)}`)) {
+			counts.tombstoned += 1;
+			entries.push({ ...base, status: "tombstoned" });
 			continue;
 		}
 		const group = groupFor(target, projectKey);
-		if (!group.index) {
-			const entries = dedupeEntries(parseEntries(readRaw(targetFilePath(root, target, projectKey))));
-			group.index = new Set(entries.map((entry) => normalizeKey(target === "failure" ? parseFailureEntry(entry).content : entry)));
-			group.blocks = entries;
-		}
-		if (group.index.has(key)) {
-			group.duplicate = (group.duplicate ?? 0) + 1;
+		const matched = group.byKey.get(normalizeKey(semantic));
+		if (matched !== undefined) {
+			counts.duplicate += 1;
+			entries.push({ ...base, status: "duplicate", localContent: group.blocks[matched] ?? "" });
 			continue;
 		}
-		group.index.add(key);
-		group.blocks.push(block);
+		const head = firstLineKey(semantic);
+		const conflicting = head ? group.byHead.get(head) : undefined;
+		if (conflicting !== undefined && group.blocks[conflicting] !== undefined) {
+			counts.conflict += 1;
+			entries.push({ ...base, status: "conflict", localContent: group.blocks[conflicting] });
+			continue;
+		}
+		counts.new += 1;
+		entries.push({ ...base, status: "new" });
 		scopeNames.add(scope === "project" ? `project:${projectKey}` : `${target}:global`);
 	}
 
-	// 2) 落盘（每份文件都过一遍预算裁剪；只有真的变了才写）。
-	let added = 0;
-	let duplicate = 0;
-	for (const group of groups.values()) {
-		duplicate += group.duplicate ?? 0;
-		if (group.blocks.length === 0) continue;
-		const before = parseEntries(readRaw(targetFilePath(root, group.target, group.projectId)));
-		const trimmed = trimEntries(group.blocks, FILE_BUDGETS[group.target]);
-		added += Math.max(0, trimmed.entries.length - before.length);
-		writeAtomic(targetFilePath(root, group.target, group.projectId), renderEntries(trimmed.entries));
+	// 包内墓碑：导入时会删掉本地同一条内容，弹窗先告诉用户「会删掉哪几条」。
+	const tombstones = [];
+	for (const item of Array.isArray(bundle.tombstones) ? bundle.tombstones : []) {
+		if (!isPlainObject(item) || typeof item.key !== "string") continue;
+		const target = SHARED_TARGETS.includes(item.target) ? item.target : "";
+		if (!target) continue;
+		const projectKey = typeof item.projectKey === "string" ? item.projectKey : "";
+		// 能对上本地条目就显示它的正文；对不上（本地早就没了）就只留空串，弹窗据此显示「已不存在」。
+		let localContent = "";
+		for (const block of parseEntries(readRaw(targetFilePath(root, target, projectKey)))) {
+			const semantic = target === "failure" ? parseFailureEntry(block).content : block;
+			if (normalizeKey(semantic) === item.key) {
+				localContent = semantic;
+				break;
+			}
+		}
+		tombstones.push({ target, projectId: projectKey, at: typeof item.at === "string" ? item.at : "", localContent });
 	}
 
-	// 3) 墓碑落地：删掉本地还留着的同一条内容，并把墓碑记到本地（下次导入同样被挡住）。
+	return {
+		bundle,
+		preview: {
+			format: BUNDLE_FORMAT,
+			version: BUNDLE_VERSION,
+			exportedAt: typeof bundle.exportedAt === "string" ? bundle.exportedAt : "",
+			device: isPlainObject(bundle.device) && typeof bundle.device.name === "string" ? bundle.device.name : "",
+			entries,
+			counts,
+			tombstones,
+			scopes: [...scopeNames].sort(),
+		},
+		groups,
+	};
+}
+
+/** 只读预览：导入弹窗据此决定默认勾选哪些、哪些是冲突。不碰记忆文件。 */
+export function previewBundle(root, value, options = {}) {
+	return analyzeBundle(root, value, options).preview;
+}
+
+/**
+ * 合并导入。
+ *
+ * 顺序：先按包内墓碑删掉本地对应条目，再逐条并入。这样「同一个包里既有删除又有新增」
+ * 时语义明确：墓碑优先于新增（同一条内容同时被删和被加，说明对面也没想清楚，保守地删）。
+ *
+ * @param selection       只导入这些条目 id（`null` = 全部）；弹窗的勾选落到这里。
+ * @param conflictPolicy  同首行冲突时：`append` 都留 / `overwrite` 用包里的替换本地那条。
+ * @param applyTombstones 是否按包内墓碑删本地条目（关掉就只做新增/替换）。
+ * @returns {{ added: number, duplicate: number, tombstoned: number, rejected: number, removed: number, replaced: number, scopes: string[], device: string }}
+ */
+export function mergeBundle(root, value, { selection = null, conflictPolicy = "append", applyTombstones = true, localDeviceKey = deviceScopeId(root) } = {}) {
+	const { bundle, preview, groups } = analyzeBundle(root, value, { localDeviceKey });
+	const wanted = selection === null ? null : new Set(selection);
+	const overwrite = conflictPolicy === "overwrite";
+	let duplicate = 0;
+	let tombstoned = 0;
+	let rejected = 0;
+	let replaced = 0;
+
+	for (const entry of preview.entries) {
+		// 拒收条目无论如何都算 rejected：用户即使全选也没法让它进来。
+		if (entry.status === "invalid") {
+			rejected += 1;
+			continue;
+		}
+		if (wanted && !wanted.has(entry.id)) continue;
+		if (entry.status === "tombstoned") {
+			tombstoned += 1;
+			continue;
+		}
+		if (entry.status === "duplicate") {
+			duplicate += 1;
+			continue;
+		}
+		const group = groups.get(`${entry.target}|${entry.projectId}`);
+		if (!group) {
+			rejected += 1;
+			continue;
+		}
+		if (entry.status === "conflict" && overwrite) {
+			const index = group.byHead.get(firstLineKey(entry.content));
+			// 只替换与这条冲突的那一行；同首行的其它条目不动（byHead 记的也是第一条）。
+			if (index !== undefined && !group.drop.has(index)) {
+				group.drop.add(index);
+				replaced += 1;
+			}
+		}
+		group.append.push(fromBundleEntry({ target: entry.target, category: entry.category, content: entry.content }));
+	}
+
+	// 落盘：每份文件都过一遍预算裁剪；只有真的变了才写。
+	let added = 0;
+	for (const group of groups.values()) {
+		if (group.append.length === 0 && group.drop.size === 0) continue;
+		const kept = group.blocks.filter((_, index) => !group.drop.has(index));
+		const trimmed = trimEntries([...kept, ...group.append], FILE_BUDGETS[group.target]);
+		added += Math.max(0, trimmed.entries.length - kept.length);
+		writeAtomic(targetFilePath(root, group.target, group.projectKey), renderEntries(trimmed.entries));
+	}
+
+	// 墓碑落地：删掉本地还留着的同一条内容，并把墓碑记到本地（下次导入同样被挡住）。
 	const removals = [];
-	for (const item of Array.isArray(bundle.tombstones) ? bundle.tombstones : []) {
+	const localTombstones = readTombstones(root);
+	for (const item of applyTombstones ? bundle.tombstones : []) {
 		if (!isPlainObject(item) || typeof item.key !== "string") continue;
 		const target = SHARED_TARGETS.includes(item.target) ? item.target : "";
 		if (!target) continue;
@@ -279,15 +421,7 @@ export function mergeBundle(root, value, { localDeviceKey = deviceScopeId(root) 
 		}
 	}
 
-	return {
-		added,
-		duplicate,
-		tombstoned,
-		rejected,
-		removed: removals.length,
-		scopes: [...scopeNames].sort(),
-		device: isPlainObject(bundle.device) && typeof bundle.device.name === "string" ? bundle.device.name : "",
-	};
+	return { added, duplicate, tombstoned, rejected, removed: removals.length, replaced, scopes: preview.scopes, device: preview.device };
 }
 
 /** 统计包内条目数（设置页在确认导入前显示「这个包含 N 条」）。 */

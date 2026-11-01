@@ -17,40 +17,11 @@ import { desktopApi } from "../../../desktopApi";
 import { Button } from "../../ui-shadcn/button";
 import { Input } from "../../ui-shadcn/input";
 import { ConfirmDialog } from "../../ui-shadcn/ConfirmDialog";
+import { describeAgentMemoryCode, memoryGroupScopeLabel, memoryTargetLabel } from "./agentMemoryLabels";
 
 /** 列表为空时的提示：与设置页其它空状态同一套淡字排版。 */
 function EmptyHint(props: { text: string }) {
 	return <p className="px-4 pb-2 text-xs text-muted-foreground">{props.text}</p>;
-}
-
-/** 失败码 → 可读原因；未知码原样显示，避免静默失败。 */
-function describeCode(code: string): string {
-	switch (code) {
-		case "invalid-input":
-		case "operation-failed":
-			return t("settings.agentMemoryErrorFailed");
-		default:
-			return code;
-	}
-}
-
-function targetLabel(target: AgentMemoryEntry["target"]): string {
-	switch (target) {
-		case "memory":
-			return t("settings.agentMemoryTargetMemory");
-		case "user":
-			return t("settings.agentMemoryTargetUser");
-		case "failure":
-			return t("settings.agentMemoryTargetFailure");
-		default:
-			return t("settings.agentMemoryTargetStanding");
-	}
-}
-
-function scopeLabel(group: AgentMemoryEntryGroup): string {
-	if (group.scope === "global") return t("settings.agentMemoryScopeGlobal");
-	if (group.scope === "device") return t("settings.agentMemoryScopeDevice", { device: group.projectName });
-	return group.projectName || group.projectId;
 }
 
 /** 条目身份：同一段内容可能同时存在于全局与项目作用域，所以键里必须带作用域。 */
@@ -76,7 +47,7 @@ export function AgentMemoryEntryList(props: {
 		if (result.ok) {
 			setData(result.value);
 			setError(null);
-		} else setError(describeCode(result.code));
+		} else setError(describeAgentMemoryCode(result.code));
 	}, []);
 
 	useEffect(() => {
@@ -91,7 +62,7 @@ export function AgentMemoryEntryList(props: {
 		return data.groups
 			.map((group) => ({
 				...group,
-				entries: group.entries.filter((entry) => `${entry.content}\n${targetLabel(entry.target)}\n${scopeLabel(group)}`.toLowerCase().includes(needle)),
+				entries: group.entries.filter((entry) => `${entry.content}\n${memoryTargetLabel(entry.target)}\n${memoryGroupScopeLabel(group)}`.toLowerCase().includes(needle)),
 			}))
 			.filter((group) => group.entries.length > 0);
 	}, [data, needle]);
@@ -105,7 +76,7 @@ export function AgentMemoryEntryList(props: {
 		setError(null);
 		try {
 			const result = await desktopApi.agentMemory.deleteEntry({ target: entry.target, projectId: entry.projectId, key: entry.key });
-			if (!result.ok) setError(describeCode(result.code));
+			if (!result.ok) setError(describeAgentMemoryCode(result.code));
 			else {
 				await refresh();
 				props.onChanged?.();
@@ -128,8 +99,8 @@ export function AgentMemoryEntryList(props: {
 				{groups.map((group) => (
 					<div key={`${group.scope}|${group.projectId}|${group.target}`} className="flex flex-col">
 						<div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-4 pt-3 pb-1 text-xs text-muted-foreground">
-							<span className="rounded-sm bg-muted px-1.5 py-0.5 text-foreground">{scopeLabel(group)}</span>
-							<span>{targetLabel(group.target)}</span>
+							<span className="rounded-sm bg-muted px-1.5 py-0.5 text-foreground">{memoryGroupScopeLabel(group)}</span>
+							<span>{memoryTargetLabel(group.target)}</span>
 							<span className="font-mono opacity-70">{group.file}</span>
 							<span className="tabular-nums">
 								{group.budget

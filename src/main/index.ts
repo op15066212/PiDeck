@@ -325,7 +325,7 @@ import { resolveEnhanceTargetModel } from "../shared/enhanceModelPreference";
 import { syncAgentMemoryRegistration } from "./agentMemory/AgentMemoryMcpRegistration";
 import { clearAgentMemoryIndex, readAgentMemoryStatus } from "./agentMemory/agentMemoryStatus";
 import { deleteAgentMemoryEntry, readAgentMemoryEntries } from "./agentMemory/agentMemoryEntries";
-import { exportAgentMemoryBundle, importAgentMemoryBundle } from "./agentMemory/agentMemoryBundle";
+import { exportAgentMemoryBundle, importAgentMemoryBundle, previewAgentMemoryBundle } from "./agentMemory/agentMemoryBundle";
 import { registerAgentMemoryIpc } from "./ipc/agentMemoryIpc";
 import { AcpSessionArchive } from "./acp/AcpSessionArchive";
 import { createAcpModelRateAnnotator } from "./acp/acpModelRates";
@@ -3914,8 +3914,9 @@ function registerIpc() {
 		getWindow: () => mainWindow,
 		readStatus: () => readAgentMemoryStatus(agentMemoryRoot()),
 		clearIndex: () => clearAgentMemoryIndex(agentMemoryRoot()),
-		exportBundle: () => exportAgentMemoryBundle({ root: agentMemoryRoot(), getWindow: () => mainWindow }),
-		importBundle: ({ filePath }) => importAgentMemoryBundle({ root: agentMemoryRoot(), getWindow: () => mainWindow, filePath }),
+		exportBundle: (selection) => exportAgentMemoryBundle({ root: agentMemoryRoot(), getWindow: () => mainWindow, selection }),
+		previewBundle: (filePath) => previewAgentMemoryBundle({ root: agentMemoryRoot(), getWindow: () => mainWindow, filePath }),
+		importBundle: (options) => importAgentMemoryBundle({ root: agentMemoryRoot(), getWindow: () => mainWindow, ...options }),
 		// 项目名只用于展示：记忆键由会话 cwd 派生，要靠项目路径反查一次才认得出来。
 		listEntries: () =>
 			readAgentMemoryEntries({

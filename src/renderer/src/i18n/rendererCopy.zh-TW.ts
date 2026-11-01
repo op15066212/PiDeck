@@ -2,7 +2,7 @@
  * 本文件由 `node scripts/genZhTwCopy.mjs` 生成，请勿手改。
  * 文案改动请修改对应的 zh-CN 源文件后重新生成；转换规则见该脚本的 OVERRIDES。
  * 注释刻意保留简体：属于开发者视角文本，不面向用户。
- * source-sha256: f08fb4c17d234f7421847496c9564cbb2dc83a1e17bd2a0f7bd7c1b77ef7f959（来自 src/renderer/src/i18n/rendererCopy.zh-CN.ts 的词典区块指纹，由 tests/zhTwCopy.test.mjs 校验新鲜度）
+ * source-sha256: 9604cca323c89d35d501a1a122b5c404e2f4e8b66d269c8b8924b8e5f4551466（来自 src/renderer/src/i18n/rendererCopy.zh-CN.ts 的词典区块指纹，由 tests/zhTwCopy.test.mjs 校验新鲜度）
  */
 import { mainProcessZhTW } from "../../../shared/i18n/mainProcessCopy.zh-TW";
 import type { TranslationKey } from "./rendererCopy.zh-CN";
@@ -5537,7 +5537,7 @@ export const zhTW: Record<TranslationKey, string> = {
 	"settings.agentMemoryImport": "匯入",
 	"settings.agentMemoryClearIndex": "清空索引",
 	"settings.agentMemoryExportDone": "已匯出 {count} 條記憶。",
-	"settings.agentMemoryImportDone": "從「{device}」匯入：新增 {added} 條，重複 {duplicate} 條，按刪除記錄跳過 {tombstoned} 條。",
+	"settings.agentMemoryImportDone": "從「{device}」匯入：新增 {added} 條，重複 {duplicate} 條，替換 {replaced} 條，按刪除記錄跳過 {tombstoned} 條。",
 	"settings.agentMemoryClearDone": "索引已清空（{count} 行），下次檢索會自動重建。",
 	"settings.agentMemoryClearConfirm": "清空本地索引？記憶檔案不受影響，但下一次檢索需要重建索引（大會話庫約幾秒）。",
 	"settings.agentMemoryIndexDegraded": "索引未啟用：{reason}。記憶仍可讀寫，但檢索會退化為檔案內子串掃描。",
@@ -5548,6 +5548,28 @@ export const zhTW: Record<TranslationKey, string> = {
 	"settings.agentMemoryErrorBundleTooLarge": "檔案過大，不像是記憶包。",
 	"settings.agentMemoryErrorIndexUnavailable": "索引層不可用（缺少 node:sqlite 或索引庫損壞）。",
 	"settings.agentMemoryErrorFailed": "操作失敗，詳情見日誌。",
+	"settings.agentMemoryExportTitle": "匯出記憶",
+	"settings.agentMemoryExportDesc": "勾選要寫進記憶包的條目。本機裝置作用域的記憶不在列表裡——它們描述這臺機器的路徑，換臺機器就是錯的。",
+	"settings.agentMemoryExportEmpty": "沒有可匯出的記憶條目。",
+	"settings.agentMemoryExportSelected": "已選 {selected} / {total} 條",
+	"settings.agentMemorySelectAll": "全選",
+	"settings.agentMemorySelectNone": "全不選",
+	"settings.agentMemoryImportTitle": "匯入記憶",
+	"settings.agentMemoryImportDesc": "從「{device}」的記憶包裡挑要併入本機的條目。",
+	"settings.agentMemoryImportEmpty": "這個包裡沒有條目。",
+	"settings.agentMemoryImportCounts": "新增 {added} · 已存在 {duplicate} · 衝突 {conflict} · 本地刪過 {tombstoned} · 拒收 {invalid}",
+	"settings.agentMemoryImportStatusNew": "新增",
+	"settings.agentMemoryImportStatusDuplicate": "已存在",
+	"settings.agentMemoryImportStatusConflict": "衝突",
+	"settings.agentMemoryImportStatusTombstoned": "本地已刪",
+	"settings.agentMemoryImportStatusInvalid": "拒收",
+	"settings.agentMemoryImportLocalVersion": "本地：{content}",
+	"settings.agentMemoryImportTombstones": "同步刪除：這個包裡有 {count} 條刪除記錄，匯入時會一併刪掉本地對應條目。",
+	"settings.agentMemoryConflictPolicy": "同一條記憶有衝突時",
+	"settings.agentMemoryConflictAppend": "都保留",
+	"settings.agentMemoryConflictOverwrite": "包裡的覆蓋本地",
+	"settings.agentMemoryConflictAppendDesc": "兩句話都留下，之後再手動合併或刪掉一條。",
+	"settings.agentMemoryConflictOverwriteDesc": "本地那條被包裡的版本替換，原內容不保留。",
 	"settings.cuaEnabled": "啟用 CUA 桌面操作",
 	"settings.cuaEnabledDesc": "開啟後在本地起一個僅迴環可達的 MCP 端點並註冊給 Pi；關閉時不監聽、不改動 Pi 配置。真實輸入始終受全域/會話殺開關保護，關閉自動審批後每次寫操作需確認。",
 	"settings.cuaAutoApprove": "CUA 免審批（自動放行）",
@@ -6420,6 +6442,7 @@ export const zhTW: Record<TranslationKey, string> = {
 
 	// ── Web 端（外部服务页面）专用文案，桌面端不消费 ──
 	"web.chooseSession": "選擇或建立會話",
+	"web.emptyGreeting": "你好，有什麼我能幫你的嗎？",
 	"web.newProject": "新建專案",
 	"web.openProjects": "開啟專案列表",
 	"web.closeProjects": "關閉專案列表",

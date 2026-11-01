@@ -12,10 +12,10 @@
 
 import { existsSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { entryCategory, normalizeKey, parseEntries, renderEntries } from "../../../resources/agent-memory/format.mjs";
+import { entryCategory, normalizeKey, parseEntries, parseFailureEntry, renderEntries } from "../../../resources/agent-memory/format.mjs";
 import { readRaw, writeAtomic } from "../../../resources/agent-memory/files.mjs";
 import { FILE_BUDGETS, TARGET_FILES, projectKeyFromPath, resolveMemoryRoot, targetFilePath } from "../../../resources/agent-memory/paths.mjs";
-import { addTombstone } from "../../../resources/agent-memory/sync.mjs";
+import { addTombstone, exportEntryId } from "../../../resources/agent-memory/sync.mjs";
 
 export type AgentMemoryTarget = keyof typeof TARGET_FILES;
 export type AgentMemoryScope = "global" | "project" | "device";
@@ -31,6 +31,12 @@ export interface AgentMemoryEntryView {
 	projectName: string;
 	/** 规范化内容键：与去重/墓碑同一个哈希口径，删除用它定位。 */
 	key: string;
+	/**
+	 * 导出弹窗的勾选键。**必须由 `sync.mjs` 的 `exportEntryId` 算**：
+	 * `failure` 条目在包里是「纯内容」（去掉 `[category]` 前缀），与 `key`（整块哈希）不同，
+	 * 渲染层自己拼 id 会让失败教训类的勾选错位。
+	 */
+	exportId: string;
 	content: string;
 	chars: number;
 	/** `failure` 的分类；其他目标为空串。 */
@@ -80,18 +86,23 @@ function buildGroup(root: string, target: AgentMemoryTarget, scope: AgentMemoryS
 	} catch {
 		return null;
 	}
-	const entries = parseEntries(readRaw(absolute)).map((content, index) => ({
-		index: index + 1,
-		target,
-		file: scope === "global" ? TARGET_FILES[target] : `${scope === "device" ? "devices" : "projects"}/${projectId}/${TARGET_FILES[target]}`,
-		scope,
-		projectId,
-		projectName,
-		key: normalizeKey(content),
-		content,
-		chars: content.length,
-		category: target === "failure" ? entryCategory(content) : "",
-	}));
+	const entries = parseEntries(readRaw(absolute)).map((content, index) => {
+		// 包的条目身份按「语义内容」算（failure 去掉分类前缀），这里必须用同一口径。
+		const semantic = target === "failure" ? parseFailureEntry(content).content : content;
+		return {
+			index: index + 1,
+			target,
+			exportId: exportEntryId({ target, scope, projectKey: projectId, content: semantic }),
+			file: scope === "global" ? TARGET_FILES[target] : `${scope === "device" ? "devices" : "projects"}/${projectId}/${TARGET_FILES[target]}`,
+			scope,
+			projectId,
+			projectName,
+			key: normalizeKey(content),
+			content,
+			chars: content.length,
+			category: target === "failure" ? entryCategory(content) : "",
+		};
+	});
 	if (entries.length === 0) return null;
 	return {
 		target,

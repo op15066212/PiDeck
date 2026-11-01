@@ -37,14 +37,7 @@ const LEARNABLE_CATEGORIES = ["failure", "correction", "insight", "preference", 
 
 export type LearnedEntry = { target: LearnableTarget; content: string; category?: string };
 
-export type LearnedEntryRejection =
-	| "not-json"
-	| "not-array"
-	| "target-invalid"
-	| "content-invalid"
-	| "content-too-long"
-	| "category-invalid"
-	| "cap-exceeded";
+export type LearnedEntryRejection = "not-json" | "not-array" | "target-invalid" | "content-invalid" | "content-too-long" | "category-invalid" | "cap-exceeded";
 
 export type ParseLearnedResult = { entries: LearnedEntry[]; rejected: { reason: LearnedEntryRejection; index: number }[] };
 

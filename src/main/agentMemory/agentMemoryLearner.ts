@@ -15,18 +15,7 @@ import type { AgentMemorySource } from "./agentMemoryMounts";
 import { addMemory, MemoryToolError } from "../../../resources/agent-memory/tools.mjs";
 import { indexSources } from "../../../resources/agent-memory/sessions.mjs";
 import { sessionMessages } from "../../../resources/agent-memory/db.mjs";
-import {
-	AUTO_LEARN_MESSAGE_LIMIT,
-	AUTO_LEARN_SYSTEM_PROMPT,
-	buildTranscript,
-	countUserTurns,
-	parseLearnedEntries,
-	readLearnState,
-	shouldLearn,
-	markLearned,
-	writeLearnState,
-	type LearnState,
-} from "./autoLearn";
+import { AUTO_LEARN_MESSAGE_LIMIT, AUTO_LEARN_SYSTEM_PROMPT, buildTranscript, countUserTurns, parseLearnedEntries, readLearnState, shouldLearn, markLearned, writeLearnState, type LearnState } from "./autoLearn";
 
 /** 会话来源沿用挂载描述里的定义：服务器与学习循环必须索引同一组目录。 */
 export type { AgentMemorySource } from "./agentMemoryMounts";
@@ -52,12 +41,7 @@ export type LearnerDeps = {
 export type LearnerOutcome = {
 	ran: boolean;
 	/** 未跑的原因：便于日志与测试断言。 */
-	skipped?:
-		| "no-session"
-		| "below-threshold"
-		| "index-unavailable"
-		| "empty-transcript"
-		| "already-running";
+	skipped?: "no-session" | "below-threshold" | "index-unavailable" | "empty-transcript" | "already-running";
 	userTurns?: number;
 	added?: number;
 	duplicate?: number;
@@ -121,9 +105,7 @@ async function runPass(deps: LearnerDeps, input: { sessionId?: string; projectId
 		// 而不是当失败丢弃——模型无从得知当前是哪个项目。
 		const target = entry.target === "project" && !projectId ? "memory" : entry.target;
 		try {
-			const outcome = deps.addEntry
-				? deps.addEntry({ target, content: entry.content, category: entry.category, projectId })
-				: addMemory(root, { target, content: entry.content, category: entry.category, projectId });
+			const outcome = deps.addEntry ? deps.addEntry({ target, content: entry.content, category: entry.category, projectId }) : addMemory(root, { target, content: entry.content, category: entry.category, projectId });
 			if (outcome?.duplicate) duplicate += 1;
 			else added += 1;
 		} catch (error) {
