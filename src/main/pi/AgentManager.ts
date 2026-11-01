@@ -6340,8 +6340,8 @@ export class AgentManager {
 	}
 
 	private upsertToolMessage(agentId: string, event: Record<string, unknown>, status: "running" | "done" | "error") {
-		const toolName = typeof event.toolName === "string" ? event.toolName : "tool";
-		const toolCallId = String(event.toolCallId ?? `${toolName}-${Date.now()}`);
+		const eventToolName = typeof event.toolName === "string" ? event.toolName : undefined;
+		const toolCallId = String(event.toolCallId ?? `${eventToolName ?? "tool"}-${Date.now()}`);
 		let agentTools = this.toolMessageIds.get(agentId);
 		if (!agentTools) {
 			agentTools = new Map<string, string>();
@@ -6367,6 +6367,8 @@ export class AgentManager {
 			}
 		}
 		const existing = existingToolIndex >= 0 ? list[existingToolIndex] : undefined;
+		// end/update 常只带 toolCallId；继承 start 的身份，避免完成态把 bash/read 降级成 tool。
+		const toolName = eventToolName ?? (typeof existing?.meta?.toolName === "string" ? existing.meta.toolName : "tool");
 		const isError = status === "error" || event.isError === true;
 		const args = event.args ?? existing?.meta?.args;
 		const startedAt = typeof existing?.meta?.startedAt === "number" ? existing.meta.startedAt : Date.now();
