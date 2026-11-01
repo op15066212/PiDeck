@@ -39,6 +39,7 @@ import { readSessionFirstScreenPage } from "../components/session/sessionSubagen
 import { estimateJumpExpandTurns, resolveJumpFallbackEntry, resolveJumpPendingAction } from "../components/session/timeline/jumpWindowPolicy";
 import { shouldDeferJumpUntilLoaded } from "./timeline/timelineRevealChannel";
 import { resolveJumpMessageIndex, resolveJumpScrollTarget } from "../components/session/timeline/jumpTarget";
+import { shouldIgnoreFollowReport, shouldResetExpandBudget } from "./timelineJumpGuard";
 
 /** 滚动接近顶部自动加载历史的阈值（px，2026-11 轮次模型）：
  *  贴顶（≤8px）才触发翻页——「滑到底才翻」，避免在顶部附近任何滚动都连翻历史页。
@@ -868,6 +869,19 @@ export function useSessionTimelineController(options: { sessionId?: string; mess
 	const [pendingJump, setPendingJump] = useState<Tagged<{ messageId: string; expandAttempts: number; loadAttempts: number; nonce: number }> | undefined>(undefined);
 	const jumpNonceRef = useRef(0);
 	/**
+	 * 跳转事务的同步镜像。滚动回调是引擎每帧上报的，读 state 会读到「跳转已开始但渲染未落地」
+	 * 的旧值；用 ref 才能在同一个 cascade 里挡住贴底上报。
+	 *
+	 * 为什么需要挡（用户三次反馈「输出时点刻度跳不回去」）：流式输出时引擎每帧都在 resize，
+	 * 一旦它上报 following=true，autoScroll 变 true 的 effect 会清空 pendingExpandTurnsRef
+	 * 并 cancel 扩窗帧——挂起中的跳转永远等不到目标轮挂载，表现就是「点了没反应」，
+	 * 而停止输出后再点就正常（这时没有新的 resize 上报）。跳转期间不接受引擎的跟底上报，
+	 * 用户真的自己滚回底部时走 setUserScrollIntent/handleTimelineScroll，不受这条影响。
+	 */
+	const pendingJumpRef = useRef(pendingJump);
+	// 渲染期同步（不做成 effect）：跳转与贴底上报常发生在同一帧，effect 太晚。
+	pendingJumpRef.current = pendingJump;
+	/**
 	 * 跳转揭示：目标消息已加载但 DOM 节点没挂载时（命中在已完成轮的执行过程折叠区里，
 	 * 折叠收起会把中间回答/工具整块卸载），先让包含它的 TurnRow 展开折叠，再走既有
 	 * pendingJump 重试循环完成落位。按会话隔离，切会话/跳转结算后清空。
@@ -1058,7 +1072,8 @@ export function useSessionTimelineController(options: { sessionId?: string; mess
 	);
 	// 回底/卸载时取消未消费的分批扩展（窗口重置回基础大小，pending 作废）
 	useEffect(() => {
-		if (autoScroll) {
+		// pendingJump 存在时不清预算：跳转靠分批扩窗把目标轮挂出来，清了就永远挂不出来。
+		if (shouldResetExpandBudget(autoScroll, Boolean(pendingJumpRef.current))) {
 			pendingExpandTurnsRef.current = 0;
 			browsePinRef.current = null;
 			pinnedRowElRef.current = null;
@@ -1248,6 +1263,8 @@ export function useSessionTimelineController(options: { sessionId?: string; mess
 
 	const setAutoScrollFromScroller = useCallback(
 		(following: boolean) => {
+			// 跳转事务进行中：不接受引擎的跟底上报（见 pendingJumpRef 注释）。
+			if (shouldIgnoreFollowReport(following, Boolean(pendingJumpRef.current))) return;
 			// stopScroll 的迟到 onFollowChange(false) 不得覆盖发送动画的恢复跟随。
 			if (sendScrollRef.current.isAnimating) return;
 			// 从历史浏览回到跟随时，先同步关闭旧浏览事务；不能等 autoScroll effect，
