@@ -32,7 +32,7 @@ import { accumulateAcpUsage, acpReplyPerf, readAcpTurnUsage } from "./acpUsageMe
 import { AcpTurnWatchdog } from "./acpTurnWatchdog";
 import { AcpMessageSnapshotStore } from "./AcpMessageSnapshotStore";
 import type { AcpSessionArchive } from "./AcpSessionArchive";
-import { killAcpProcessTree, spawnAcpProcess } from "./AcpProcessHost";
+import { killAcpProcessTree, shutdownAcpProcess, spawnAcpProcess } from "./AcpProcessHost";
 import type { AcpProxyEnvSettings } from "../sessions/sessionProxyPolicy";
 import { performAcpHandshake } from "./AcpHandshake";
 import { AcpUpdatePipeline } from "./AcpUpdatePipeline";
@@ -90,6 +90,12 @@ type AcpManagerDeps = {
 	permissionTimeoutMs?: number;
 	/** abort 升级强杀宽限(默认 5s)。测试注入短值验证升级路径。 */
 	abortEscalationMs?: number;
+	/**
+	 * 有序停止宽限(默认 ACP_GRACEFUL_EXIT_MS = 1.5s，与 pi 侧 #450 同值)：
+	 * 关 stdin 后等 CLI 自己退出（便于其 SessionEnd 钩子落地），到点才整树强杀。
+	 * 测试注入短值避免集成用例每停一个会话多等 1.5s。
+	 */
+	gracefulExitMs?: number;
 	/** 回合无输出 stall 判定阈值(默认 90s)。测试注入短值验证看门狗。 */
 	promptStallTimeoutMs?: number;
 	/**
@@ -1014,17 +1020,20 @@ export class AcpAgentManager implements SessionAgentGateway {
 		runtime.status = "closed";
 		runtime.tab.status = "closed";
 		this.failPendingPermissions(runtime);
-		this.killProcess(runtime);
-		// 删除前先推一次终态:stop()/abort 升级强杀都走这里,渲染层需要 closed 事件把
+		// 先摘除并推终态:stop()/abort 升级强杀都走这里,渲染层需要 closed 事件把
 		// 会话从 running 收口(删除后的 list() 不再含该 agent,不会产生逐 agent 事件;
 		// 用户主动停止另有 coordinator 的 detach 事件,此推送与其幂等)。
+		// 必须在有序停止之前:关 stdin 到 CLI 真退出最多等 gracefulExitMs，不能让 UI 干等。
 		this.emit(agentEventTags.agentsState, this.list());
 		this.runtimes.delete(agentId);
 		this.emit(agentEventTags.agentsState, this.list());
+		// 有序停止（#475）：关 stdin 给 CLI 跑 SessionEnd 钩子，宽限到点才强杀。
+		await this.shutdownProcess(runtime);
 	}
 
 	async stopAll(): Promise<void> {
-		for (const agentId of [...this.runtimes.keys()]) await this.stop(agentId);
+		// 并发而非串行：退出路径 before-quit 只有 5s 总预算，串行宽限会按 agent 数累加。
+		await Promise.all([...this.runtimes.keys()].map((agentId) => this.stop(agentId)));
 	}
 
 	async restart(agentId: string): Promise<AgentTab> {
@@ -1186,17 +1195,37 @@ export class AcpAgentManager implements SessionAgentGateway {
 	}
 
 	private killProcess(runtime: AcpAgentRuntime): void {
-		if (runtime.flushTimer) {
-			clearTimeout(runtime.flushTimer);
-			runtime.flushTimer = null;
-			runtime.flushPending = false;
-		}
-		this.turnWatchdog.clearTurnTimers(runtime);
+		this.clearRuntimeTimers(runtime);
 		runtime.conn?.close();
 		const proc = runtime.proc;
 		if (!proc || proc.exitCode !== null || proc.signalCode !== null) return;
 		runtime.proc = null;
 		// 进程树击杀(Windows taskkill /T + 兑底 proc.kill)见 AcpProcessHost.killAcpProcessTree。
 		killAcpProcessTree(proc);
+	}
+
+	/**
+	 * 有序停止（issue #475）：结算在途请求 → 关 stdin → 等 CLI 自己退出（跑 SessionEnd
+	 * 钩子/自身清理），宽限到点仍未退出才整树强杀。与 pi 侧 LocalPiRuntimeLauncher 的
+	 * stop 对齐（#450）；握手失败/断线重连仍走 killProcess 的立即强杀（进程/连接已死，
+	 * 没有可等的收尾）。
+	 */
+	private async shutdownProcess(runtime: AcpAgentRuntime): Promise<void> {
+		this.clearRuntimeTimers(runtime);
+		runtime.conn?.close();
+		const proc = runtime.proc;
+		if (!proc || proc.exitCode !== null || proc.signalCode !== null) return;
+		runtime.proc = null;
+		await shutdownAcpProcess(proc, { gracefulExitMs: this.deps.gracefulExitMs });
+	}
+
+	/** flush 批处理 + 回合看门狗的定时器收尾；两条停止路径共用。 */
+	private clearRuntimeTimers(runtime: AcpAgentRuntime): void {
+		if (runtime.flushTimer) {
+			clearTimeout(runtime.flushTimer);
+			runtime.flushTimer = null;
+			runtime.flushPending = false;
+		}
+		this.turnWatchdog.clearTurnTimers(runtime);
 	}
 }
