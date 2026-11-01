@@ -2141,6 +2141,11 @@ export function useSessionTimelineController(options: { sessionId?: string; mess
 		// 这不是「目标不存在」—— give-up 会误报「跳转失败」并把插件导航丢掉（#401 复审 P0）。
 		// effect 依赖 combinedMessages：数据到达后自动重跑并落位。
 		if (!stillInData && shouldDeferJumpUntilLoaded({ targetIndex, messageCount: combinedMessages.length, surfaceLoading: isSurfaceLoading })) return;
+		// 补页失败：不推进预算、不自动重发。错误行已由 loadMoreMessages 弹给用户，
+		// 他点「加载更多」重试成功后 loadMoreError 清空，本 effect 重跑并继续落位。
+		// 放在 resolveJumpPendingAction 之前：失败要吃掉一次 loadAttempts 的话，
+		// 保险丝会被空转烧断，用户连点几次之后彻底跳不动。
+		if (!stillInData && loadMoreError) return;
 		const action = resolveJumpPendingAction({
 			targetInLoadedData: stillInData,
 			hasMorePages,
@@ -2180,7 +2185,7 @@ export function useSessionTimelineController(options: { sessionId?: string; mess
 			return;
 		}
 		expandWindow(action.turns);
-	}, [clearTimelineReveal, combinedMessages, controllerEnabled, diskPage, expandWindow, findFallbackJumpRow, highlightMessage, historyHasMore, isLoadingMessagePage, isSurfaceLoading, loadMoreMessages, ownerKey, pendingJump, scrollJumpTargetIntoView, scrolledWindowTurns]);
+	}, [clearTimelineReveal, combinedMessages, controllerEnabled, diskPage, expandWindow, findFallbackJumpRow, highlightMessage, historyHasMore, isLoadingMessagePage, isSurfaceLoading, loadMoreError, loadMoreMessages, ownerKey, pendingJump, scrollJumpTargetIntoView, scrolledWindowTurns]);
 
 	return {
 		timelineRef,

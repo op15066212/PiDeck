@@ -23,9 +23,15 @@ export const HISTORY_TURN_PAGE_SIZE = 10;
  *  按钮是单次明确意图，只有它用 10。 */
 export const HISTORY_SCROLL_TURN_PAGE_SIZE = 3;
 
-/** 回填（backfill）的单页轮数：与滚动一致，保持小步。
- *  回填在后台连续补页，一次 10 轮会让补页链的单批负载翻三倍。 */
-export const HISTORY_BACKFILL_TURN_PAGE_SIZE = 3;
+/** 跳转补页（backfill）的单页轮数：取 host 上限，一次给足 10 轮。
+ *
+ *  这个 source 只有一个用途 —— 用户点右缘刻度跳还没加载的历史。两个调用方
+ *  （SessionSurfaceStage 的刻度 pending 链、controller 的 pendingJump effect）都是它。
+ *  曾经写成 3，理由是「回填在后台连续补页，一次 10 轮会让单批负载翻三倍」——
+ *  那个调用方已经不存在了（grep "backfill" 只有这两处跳转），注释是过期的。
+ *  页面高度除以 12 决定刻度数（约 90 根），147 轮的会话一根刻度背后可能差几十轮，
+ *  每次只补 3 轮 = 用户要点十几次才落地。取 10 是 host 上限，不能再大。 */
+export const HISTORY_BACKFILL_TURN_PAGE_SIZE = 10;
 
 export type HistoryLoadSource = "scroll" | "button" | "backfill";
 
