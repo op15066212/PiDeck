@@ -2,7 +2,7 @@
  * 本文件由 `node scripts/genZhTwCopy.mjs` 生成，请勿手改。
  * 文案改动请修改对应的 zh-CN 源文件后重新生成；转换规则见该脚本的 OVERRIDES。
  * 注释刻意保留简体：属于开发者视角文本，不面向用户。
- * source-sha256: 9604cca323c89d35d501a1a122b5c404e2f4e8b66d269c8b8924b8e5f4551466（来自 src/renderer/src/i18n/rendererCopy.zh-CN.ts 的词典区块指纹，由 tests/zhTwCopy.test.mjs 校验新鲜度）
+ * source-sha256: 5369759b8dd087f80925f5f94085241be5956f058b85076a50a16b2774d20e15（来自 src/renderer/src/i18n/rendererCopy.zh-CN.ts 的词典区块指纹，由 tests/zhTwCopy.test.mjs 校验新鲜度）
  */
 import { mainProcessZhTW } from "../../../shared/i18n/mainProcessCopy.zh-TW";
 import type { TranslationKey } from "./rendererCopy.zh-CN";
@@ -4335,15 +4335,15 @@ export const zhTW: Record<TranslationKey, string> = {
 	"outline.turnFallback": "第 {index} 輪",
 	"outline.title": "會話定位",
 	"outline.panel": "會話目錄",
-	"outline.searchPlaceholder": "搜尋，或輸入條數後按 Enter",
-	"outline.searchAria": "搜尋目錄項目，或輸入第幾條跳轉",
-	"outline.collapse": "收合目錄",
+	"outline.searchPlaceholder": "搜尋，或輸入條數回車",
+	"outline.searchAria": "搜尋目錄條目，或輸入第幾條跳轉",
+	"outline.collapse": "收起目錄",
 	"outline.expand": "展開會話目錄",
 	"outline.onlyRange": "只有 1–{count}",
 	"outline.hits": "命中 {count}",
 	"outline.total": "共 {count} 條",
 	"outline.earlier": "更早 · 前 {count} 條",
-	"outline.earlierAria": "還有 {count} 條更早的，開啟目錄查看",
+	"outline.earlierAria": "還有 {count} 條更早的，開啟目錄檢視",
 	"outline.jumpUnreachable": "這條提問還在更早的歷史裡，繼續向上翻一會兒再點。",
 	"outline.trigger": "會話定位 · {count} 條",
 	"prompt.closeHint": "Esc 關閉",

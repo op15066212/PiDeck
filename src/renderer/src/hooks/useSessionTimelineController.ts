@@ -906,16 +906,6 @@ export function useSessionTimelineController(options: { sessionId?: string; mess
 	 */
 	const [pendingJump, setPendingJump] = useState<Tagged<{ messageId: string; expandAttempts: number; loadAttempts: number; nonce: number }> | undefined>(undefined);
 
-	/**
-	 * 跳转在途的同步镜像。为什么需要 ref：下面两处「回底就作废扩窗」的逻辑在 effect /
-	 * rAF 回调里跑，读不到最新 state；而流式输出期间贴底引擎每帧都把 autoScroll 设回
-	 * true，于是扩窗批次刚排上就被清空、渲染窗口也被压回 3 轮——目标轮永远挂不上，
-	 * 界面表现为「吐 token 时点刻度没反应」（2026-11 真机）。
-	 */
-	const pendingJumpRef = useRef(false);
-	useLayoutEffect(() => {
-		pendingJumpRef.current = pendingJump !== undefined;
-	}, [pendingJump]);
 	const jumpNonceRef = useRef(0);
 	/**
 	 * 跳转事务的同步镜像。滚动回调是引擎每帧上报的，读 state 会读到「跳转已开始但渲染未落地」
