@@ -30,8 +30,6 @@ export type SessionWorkspaceFocusHandlers = {
  *
  * 删除判据是「本次运行加载过（`seenSessionIds`）且当前 `sessionRecords` 里已不在」：项目目录按需
  * 加载，启动首帧的空记录表和尚未展开的项目都不代表记录被删，不能凭它们清掉用户的置顶/Tab。
- * 渲染层虚拟 id（`renderer:*`）无条件丢弃：它没有 Catalog 记录、也永远不会出现在
- * `sessionRecords` 里，按 seen 规则永远清不掉（会渲染成「未命名」幽灵标签）。
  * 无变化时返回原引用，让 React state 去抖与 localStorage 写入都不白跑。
  */
 export function migrateAndPruneSessionTabIds(current: string[], aliases: ReadonlyMap<string, string>, sessionRecords: Readonly<Record<string, unknown>>, seenSessionIds: ReadonlySet<string>): string[] {
@@ -62,7 +60,6 @@ export function useSessionWorkspaceChrome(options: { currentSessionId: string | 
 		try {
 			const raw = localStorage.getItem(PINNED_TABS_STORAGE_KEY);
 			const parsed = raw ? JSON.parse(raw) : [];
-			// 旧版本可能把引导页虚拟 id 固定过（渲染成「未命名」幽灵标签）：读入时直接丢掉。
 			return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === "string" && !isRendererVirtualSessionId(id)) : [];
 		} catch {
 			return [];
@@ -200,8 +197,6 @@ export function useSessionWorkspaceChrome(options: { currentSessionId: string | 
 	/** 在 App / 侧栏边界登记 Tab（preview / permanent）；与 selectSession 解耦 */
 	const registerOpenSession = useCallback(
 		(sessionId: string, mode: SessionTabOpenMode = "permanent") => {
-			// 虚拟 id（renderer:*）不登记：它没有 Catalog 记录，登记只会得到一张点不动、清不掉的
-			// 「未命名」幽灵标签。真实会话即使项目未加载（record 暂时缺失）也不受影响。
 			if (isRendererVirtualSessionId(sessionId)) return;
 			const { tabs, pinned, previewId } = tabsSnapshotRef.current;
 			// 虚拟引导 Tab 只承载空态输入框；真实会话打开后替换它，不留下“未命名”空 Tab。
@@ -322,9 +317,6 @@ export function useSessionWorkspaceChrome(options: { currentSessionId: string | 
 
 	const togglePin = useCallback(
 		(sessionId: string) => {
-			// 与 registerOpenSession 同源：虚拟 id 不进置顶集合。今天唯一调用方是 Tab 栏
-			// （onTogglePin），引导页不可达；但「钉住当前会话」一类入口一旦出现，写进去的
-			// 虚拟 id 只在下次记录变化/下次启动才被清掉，会把幽灵标签钉死。
 			if (isRendererVirtualSessionId(sessionId)) return;
 			const { tabs, pinned, previewId } = tabsSnapshotRef.current;
 			const next = togglePinSessionTab(tabs, pinned, sessionId);

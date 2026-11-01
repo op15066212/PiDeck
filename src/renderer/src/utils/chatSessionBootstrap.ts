@@ -9,10 +9,6 @@ export type ChatSessionBootstrapAction = { kind: "none" } | { kind: "load" } | {
  * Catalog；用户首次发送（或选择 ACP——configOptions 需要 runtime 握手）时由
  * App.ensureSessionForSend 创建真实会话（Chat 匿名 / 非 Chat draft）并把
  * composer 状态整体提升过去。
- *
- * 前缀 `renderer:` 与 shared/rendererVirtualSessionId 的判据必须同源：写成字面量而不是
- * 模板拼接，既保持既有测试（tests/projectEmptyState.test.mjs）钉住的形态，也让
- * tests/guideBootstrapGhostTab.test.mjs 断言「前缀 + 该 id 命中前缀判据」来防漂移。
  */
 export const GUIDE_BOOTSTRAP_SESSION_ID = "renderer:guide-bootstrap";
 
