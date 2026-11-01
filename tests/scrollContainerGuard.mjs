@@ -114,6 +114,16 @@ function scan(options = {}) {
 			const match = SCROLL_REF_RE.exec(line);
 			if (match) scrollRefNames.add(match[1]);
 		}
+		// 类名被抽成变量的容器：`const listClass = "... overflow-y-auto ..."` 这行会被下面的
+		// 跳过规则滤掉，元素行 `<ul className={listClass}>` 又没有 overflow 字面量，于是整个
+		// 容器从判定面里静默消失（PR #471 review 实测命中 4 处：tool-result / PiCommandSourcePanel
+		// ×2 / ProviderLoginModal）。这里记下「本文件定义了含 overflow 的字符串常量」，
+		// 元素行引用到它时仍按容器登记，逼它进虚拟化 / 豁免 / 基线三选一。
+		const extractedClassNames = new Map();
+		for (let i = 0; i < lines.length; i += 1) {
+			const decl = /^\s*(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=/.exec(lines[i]);
+			if (decl && CONTAINER_RE.test(lines[i]) && !lines[i].includes("<")) extractedClassNames.set(decl[1], i + 1);
+		}
 		for (let i = 0; i < lines.length; i += 1) {
 			const line = lines[i];
 			// 变量声明不是元素：`const scrollClass = "overflow-auto"` 曾被当成滚动容器，
@@ -121,7 +131,13 @@ function scan(options = {}) {
 			// 基线上留了一条假指纹。只跳过「不含 < 的声明行」——单行 JSX
 			// （`const X = () => <div className="overflow-y-auto" />`）里的容器仍然要扫到。
 			if (/^\s*(?:const|let|var)\s/.test(line) && !line.includes("<")) continue;
-			if (!CONTAINER_RE.test(line)) continue;
+			if (!CONTAINER_RE.test(line)) {
+				// 反方向：字面量不在元素行上，而在本文件的字符串常量里。引用到那个常量同样算容器
+				// 候选——否则「类名抽成变量」就是一条静默逃跑通道（跳过规则只看声明行）。
+				const cls = /className=\{([^}]*)\}/.exec(line);
+				const hit = cls && /<[A-Za-z]/.test(line) ? [...extractedClassNames.keys()].find((name) => new RegExp("(?:^|[^\\w$])" + name + "(?:[^\\w$]|$)").test(cls[1])) : undefined;
+				if (!hit) continue;
+			}
 			if (isCommentLine(line)) continue;
 			const lineNo = i + 1;
 			// 已虚拟化 = 容器自己有 ref，且同一个 ref 名传给了 <VirtualStack> 的 scrollRef。

@@ -155,3 +155,30 @@ node tests/scrollContainerGuard.mjs --seed # 只有全量判定后才允许重�
 
 判据在 `tests/timelineJumpGuard.test.mjs`（含「没有 pin 时必须照常接收上报」的反向样本——
 只测「该忽略」一侧，把条件写成恒 true 也能全绿）。
+
+### 7.4 review 修订：类名抽成变量是一条静默逃跑通道
+
+review 指出（PR #471）守卫里「跳过变量声明行」那条规则只看声明，等于把容器判据丢了一半：
+
+- 声明行 `const listClass = "m-0 max-h-64 overflow-y-auto"` 被跳过（这一行确实不是容器）；
+- 真正那一行 `<ul className={listClass}>` 里没有 `overflow-*` 字面量，于是**整个容器从判定面消失**：
+  既不进基线、也不报未判定，等于永久逃出审计。
+
+实测命中 4 处，已全部把类名内联回元素行，并给出归类：
+
+| 位置 | 归类 | 依据 |
+| --- | --- | --- |
+| `tool-result.tsx` 工具输出视口 | `nested` | 行模型由 children（ToolCard 渲染的内容）持有，本层只是限高视口 |
+| `PiCommandSourcePanel.tsx` ×2 | `bounded` | 安装来源是固定枚举（nvm/mise/pnpm 的 shim），条数有硬上限 |
+| `ProviderLoginModal.tsx` 阶段内容区 | `transient` | loading / 表单 / 二维码轮换，随弹窗生命周期结束 |
+
+守卫补上了反方向判据：文件内定义了含 `overflow-*` 的字符串常量、元素行又引用到它时，
+那个元素行照样算容器候选，必须落进「虚拟化 / 豁免 / 基线」三档之一。三条用例钉住这个方向
+（抽成变量必须报、内联后必须能被标记认下来、只声明不引用不算容器）。
+
+**写新容器时照这条来**：滚动容器的类名内联在元素行上。要复用就别抽类名常量——
+抽类名会让守卫扫不到，正确的做法是拆组件。
+
+**已知取舍**：`WebFilePreview` 的 markdown 分支整段交给 `MarkdownStream`，不虚拟化。
+理由不只是「没有行列表」——跨屏整段选中复制依赖完整 DOM，虚拟化后只能拿到视口内的行。
+这条取舍适用于所有 `text` 类别容器。
