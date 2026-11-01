@@ -7,6 +7,7 @@ import { SettledLongAnswer } from "./SettledLongAnswer";
 import { shouldCollapseSettledText } from "./markdownStreamPolicy";
 import { PreviewRail, type PreviewRailItem } from "../motion/preview-rail";
 import { planRailTicks, railBuckets, railCapacity } from "./timeline/outlineRailTicks";
+import { SessionOutlinePanel } from "./SessionOutlinePanel";
 import { areOutlineRailItemsEqual, createOutlineItemIndex, resolveVisibleRailActiveId } from "./timeline/outlineRailActive";
 import { useTimelineOutlineActiveId } from "./timeline/useTimelineOutlineActiveId";
 import { useLazyValue } from "../../lib/hooks/use-render-reuse";
@@ -1342,6 +1343,9 @@ function areConversationOutlinePropsEqual(previous: ConversationOutlineProps, ne
 function ConversationOutlineView(props: ConversationOutlineProps) {
 	// The visible timeline checkpoint owns rail feedback; clicking a tick updates it immediately.
 	const [railActiveId, setRailActiveId] = useTimelineOutlineActiveId(props.timelineRef, props.items);
+	// 展开态是临时查看行为，不做持久化：每次开应用都弹一个 288px 面板挡正文，
+	// 用户第一反应是「我没点它」。收起即回到刻度条。
+	const [expanded, setExpanded] = useState(false);
 	const containerRef = useRef<HTMLDivElement>(null);
 	const [availableHeight, setAvailableHeight] = useState(0);
 	// 导轨是时间线滚动视口的兄弟节点，滚轮落在它上面不会带动时间线，必须显式转发。
@@ -1356,6 +1360,12 @@ function ConversationOutlineView(props: ConversationOutlineProps) {
 		const onWheel = (event: WheelEvent) => {
 			const forward = forwardWheelRef.current;
 			if (!forward || event.deltaY === 0) return;
+			// 展开态目录面板是本容器的子节点：它要自己滚。这里无条件 preventDefault 加转发，
+			// 用户在面板里滚 = 动的是背后的时间线、面板纹丝不动，还会以为面板坏了。
+			// 不能用 stopPropagation 修：本监听挂在这层原生节点上，冒泡阶段先于 React 合成事件，
+			// 在 onWheel 里拦已经晚了。只能在源头判归属。
+			// [耦合点] 这个 class 名与 SessionOutlinePanel 根节点同源，那边也写了反向注释。
+			if ((event.target as Element | null)?.closest(".session-outline-panel")) return;
 			event.preventDefault();
 			forward(event.deltaY);
 		};
@@ -1399,25 +1409,46 @@ function ConversationOutlineView(props: ConversationOutlineProps) {
 
 	return (
 		<div ref={containerRef} className={cn("outline-hover pointer-events-none", props.className)}>
-			{railItems.length > 0 && (
-				<PreviewRail
-					orientation="vertical"
-					items={railItems}
-					label={t("outline.title")}
-					itemSize={plan.itemSize}
-					previewSide="before"
-					activeId={visibleRailActiveId}
-					highlightActive={visibleRailActiveId !== undefined}
-					onItemSelect={(item) => {
-						setRailActiveId(item.id);
-						props.onJump(item.id);
+			{expanded ? (
+				<SessionOutlinePanel
+					items={props.items}
+					activeId={railActiveId}
+					onJump={(id) => {
+						setRailActiveId(id);
+						props.onJump(id);
+						// 面板是浮层，会盖住右边近 300px —— 用户跳过去要看的正是被盖住的那一块。
+						// 收起是「用完就走」，不是「关掉偏好」。
+						setExpanded(false);
 					}}
-					/* 宽度对齐原触发按钮（30px），min-h-0 抵消组件自带的演示高度 */
-					className="pointer-events-auto min-h-0 w-[30px]"
-					railClassName="w-full content-center [&_[data-slot=preview-rail-item]]:w-full [&_[data-slot=preview-rail-item]]:justify-center [&_[data-slot=preview-rail-tick]]:h-0.5 [&_[data-slot=preview-rail-tick]]:w-4 [&_[data-slot=preview-rail-tick]]:origin-center"
-					previewContainerClassName="inset-y-0 right-7 left-auto w-64"
-					previewClassName="[&_[data-slot=preview-rail-card]]:h-20 [&_[data-slot=preview-rail-card]]:overflow-hidden [&_[data-slot=preview-rail-card]]:p-3 [&_[data-slot=preview-rail-title]]:line-clamp-1 [&_[data-slot=preview-rail-title]]:text-xs [&_[data-slot=preview-rail-title]]:leading-4 [&_[data-slot=preview-rail-description]]:line-clamp-1 [&_[data-slot=preview-rail-description]]:text-xs [&_[data-slot=preview-rail-description]]:leading-4"
+					onClose={() => setExpanded(false)}
 				/>
+			) : (
+				<>
+					{/* 展开入口：目标未加载时按钮也会先补页，所以没条目时仍要能点开 */}
+					<button type="button" onClick={() => setExpanded(true)} aria-label="展开会话目录" className="pointer-events-auto mb-1 rounded-md px-1.5 py-1 text-xs text-muted-foreground hover:bg-muted/60 hover:text-foreground">
+						☰
+					</button>
+					{railItems.length > 0 && (
+						<PreviewRail
+							orientation="vertical"
+							items={railItems}
+							label={t("outline.title")}
+							itemSize={plan.itemSize}
+							previewSide="before"
+							activeId={visibleRailActiveId}
+							highlightActive={visibleRailActiveId !== undefined}
+							onItemSelect={(item) => {
+								setRailActiveId(item.id);
+								props.onJump(item.id);
+							}}
+							/* 宽度对齐原触发按钮（30px），min-h-0 抵消组件自带的演示高度 */
+							className="pointer-events-auto min-h-0 w-[30px]"
+							railClassName="w-full content-center [&_[data-slot=preview-rail-item]]:w-full [&_[data-slot=preview-rail-item]]:justify-center [&_[data-slot=preview-rail-tick]]:h-0.5 [&_[data-slot=preview-rail-tick]]:w-4 [&_[data-slot=preview-rail-tick]]:origin-center"
+							previewContainerClassName="inset-y-0 right-7 left-auto w-64"
+							previewClassName="[&_[data-slot=preview-rail-card]]:h-20 [&_[data-slot=preview-rail-card]]:overflow-hidden [&_[data-slot=preview-rail-card]]:p-3 [&_[data-slot=preview-rail-title]]:line-clamp-1 [&_[data-slot=preview-rail-title]]:text-xs [&_[data-slot=preview-rail-title]]:leading-4 [&_[data-slot=preview-rail-description]]:line-clamp-1 [&_[data-slot=preview-rail-description]]:text-xs [&_[data-slot=preview-rail-description]]:leading-4"
+						/>
+					)}
+				</>
 			)}
 		</div>
 	);

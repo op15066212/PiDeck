@@ -276,6 +276,16 @@
   right: var(--rail-inset, 12px);
   top: 150px;
 }
+
+/* 展开态目录面板：容器是 flex column，子项默认 min-height:auto 会按内容撑开，
+   于是内部列表永远觉得自己放得下、滚动条不出现。max-height 撑满容器（top/bottom
+   已由 .outline-hover 夹持），min-height:0 让列表真正能收缩并滚动。
+   展开是浮层：不改变消息区的宽度，展开/收起时 timeline 的 clientWidth 与 scrollTop
+   必须不变，否则会触发一次重排 + 虚拟化全量重算，比不展开更卡。 */
+.session-outline-panel {
+  max-height: 100%;
+  min-height: 0;
+}
 .outline-hover {
   position: absolute;
   right: calc(11px + var(--drawer-splitter-w) + max(var(--drawer-col-w), min(var(--drawer-width), 38vw)) + var(--outline-content-w, 0px));
