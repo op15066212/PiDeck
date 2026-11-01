@@ -1,5 +1,5 @@
 {
-	"count": 140,
+	"count": 138,
 	"entries": [
 		"src/renderer/src/ConfigModal.tsx :: <div className=\"grid max-h-56 gap-1.5 overflow-auto text-left\">",
 		"src/renderer/src/ConfigModal.tsx :: className=\"config-sidebar flex min-h-0 shrink-0 flex-col items-stretch gap-2.5 overflow-auto border-0 border-r border-border rounded-none bg-transparent p-2.5 d",
@@ -24,7 +24,6 @@
 		"src/renderer/src/components/app/SettingsModal.tsx :: <div className=\"flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-5\" role=\"alert\">",
 		"src/renderer/src/components/app/SettingsModal.tsx :: <div className=\"grid max-h-56 gap-1.5 overflow-auto text-left\">",
 		"src/renderer/src/components/app/git/GitGraph.tsx :: <div className=\"flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto overscroll-contain [scrollbar-gutter:stable]\">",
-		"src/renderer/src/components/app/git/GitGraph.tsx :: className=\"pointer-events-auto absolute z-[1800] box-border max-h-[min(420px,calc(100vh-16px))] overflow-auto rounded-md border border-[var(--git-panel-border)]",
 		"src/renderer/src/components/app/settings/AcpPresetChips.tsx :: <pre className=\"bg-muted/50 text-muted-foreground max-h-28 overflow-y-auto rounded-md p-2 font-mono text-micro leading-relaxed\" aria-label={t(\"acp.installLog\")}",
 		"src/renderer/src/components/app/settings/CustomThemeSection.tsx :: <div className=\"max-h-28 shrink-0 overflow-y-auto rounded-md border border-[var(--color-danger)]/50 bg-[var(--color-danger-soft)] px-3 py-2 text-xs text-[var(--",
 		"src/renderer/src/components/app/settings/DiagnosticsPanel.tsx :: <ul className=\"mt-1 max-h-48 overflow-auto px-1 font-mono text-caption text-muted-foreground\">",
@@ -62,7 +61,6 @@
 		"src/renderer/src/components/session/DshAgentToolsPanel.tsx :: <div className=\"flex max-h-56 flex-col gap-1 overflow-y-auto border-t border-border-subtle p-2\">",
 		"src/renderer/src/components/session/DshAgentToolsPanel.tsx :: <div className=\"min-h-40 overflow-y-auto\">",
 		"src/renderer/src/components/session/MessageShareModal.tsx :: <div className=\"min-h-0 flex-1 overflow-y-auto px-3 py-2.5\">",
-		"src/renderer/src/components/session/ProjectEmptyState.tsx :: <div className=\"flex min-h-0 flex-1 flex-col items-center justify-center gap-8 overflow-y-auto px-6 pb-10 pt-[18vh]\">",
 		"src/renderer/src/components/session/QuickMessagePicker.tsx :: <div className=\"min-h-0 flex-1 overflow-y-auto p-1\">",
 		"src/renderer/src/components/session/RawToolCallFallback.tsx :: <pre className=\"m-0 max-h-96 overflow-auto border-t border-border-subtle px-3 py-2 text-caption text-text-secondary whitespace-pre-wrap break-all\">{props.text}<",
 		"src/renderer/src/components/session/RewindCheckpointList.tsx :: <CollapsibleContent className=\"mt-1.5 max-h-40 overflow-auto rounded-md bg-muted/40 px-2 py-1.5 font-mono text-micro leading-4 text-text-secondary\">",
