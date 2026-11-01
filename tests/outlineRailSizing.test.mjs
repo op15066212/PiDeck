@@ -8,6 +8,11 @@ const ticks = load("src/renderer/src/components/session/timeline/outlineRailTick
 
 test("间距按实际条数算：total x size 不超过可用高度（容量范围内）", () => {
 	// 判据就是这一句。PreviewRail 的导轨总高 = items.length x itemSize。
+	//
+	// 适用下界：availableHeight >= 24（容器最少够两根 12px 刻度）。更小的窗口不保证 ——
+	// h=20 时 capacity=1、limit=max(1, 0)=1、total=2、size 被 12px 下限提到 12，
+	// 24 > 20 仍然溢出。现实里不会出现（容器是整条右缘、由 top/bottom 夹持），
+	// 但造样本时别拿 h<24 去测，否则会以为修法错了、跑去改对的代码。
 	for (const h of [400, 600, 792, 800, 900, 1080]) {
 		const capacity = ticks.railCapacity(h);
 		// 占位项从容量里扣一格后，实际条数 <= capacity
