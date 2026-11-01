@@ -388,7 +388,7 @@ export function MorphingSearch({ items, placeholder = "Search", shortcut = "f", 
 										</div>
 										<kbd className="flex h-7 shrink-0 items-center rounded-md border border-border px-2 text-xs text-muted-foreground">Esc</kbd>
 									</div>
-									// scroll-ok: bounded —— 行数有硬上限（受控分页 / 上限常量 / 固定枚举），不随数据无限增长。
+									{/* scroll-ok: bounded —— 行数有硬上限（受控分页 / 上限常量 / 固定枚举），不随数据无限增长。 */}
 									<motion.div
 										ref={listRef}
 										id={listboxId}

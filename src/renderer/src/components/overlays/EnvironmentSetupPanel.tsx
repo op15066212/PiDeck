@@ -149,7 +149,7 @@ export function EnvironmentSetupPanel(props: EnvironmentSetupPanelProps) {
 							<AlertCircle size={13} aria-hidden="true" />
 							{failureTitle(guide.failure.reason)}
 						</span>
-						// scroll-ok: text —— 单一文本块（pre / markdown 正文），没有行列表可切，虚拟化无从下手。
+						{/* scroll-ok: text —— 单一文本块（pre / markdown 正文），没有行列表可切，虚拟化无从下手。 */}
 						{guide.failure.detail && <pre className="m-0 max-h-32 overflow-auto whitespace-pre-wrap break-all font-mono text-micro leading-relaxed text-text-secondary">{guide.failure.detail}</pre>}
 					</div>
 				)}
@@ -285,9 +285,9 @@ export function EnvironmentSetupPanel(props: EnvironmentSetupPanelProps) {
 									{manual.result.success ? t("environment.installCompleted") : t("environment.installFailed")}
 									{` · ${t("environment.installExitCode")} ${manual.result.exitCode ?? "-"}`}
 								</span>
-								// scroll-ok: text —— 单一文本块（pre / markdown 正文），没有行列表可切，虚拟化无从下手。
+								{/* scroll-ok: text —— 单一文本块（pre / markdown 正文），没有行列表可切，虚拟化无从下手。 */}
 								{manual.result.stdout && <pre className="m-0 max-h-40 overflow-auto whitespace-pre-wrap break-all rounded-md bg-background p-2 font-mono text-micro leading-relaxed text-text-secondary">{manual.result.stdout}</pre>}
-								// scroll-ok: text —— 单一文本块（pre / markdown 正文），没有行列表可切，虚拟化无从下手。
+								{/* scroll-ok: text —— 单一文本块（pre / markdown 正文），没有行列表可切，虚拟化无从下手。 */}
 								{manual.result.stderr && <pre className="m-0 max-h-40 overflow-auto whitespace-pre-wrap break-all rounded-md bg-background p-2 font-mono text-micro leading-relaxed text-danger">{manual.result.stderr}</pre>}
 							</div>
 						)}
