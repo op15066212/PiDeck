@@ -9,7 +9,7 @@
  * 点击会话行 = 打开会话（切 activeSessionId）。
  */
 import { Fragment, useEffect, useMemo, useState } from "react";
-import { Check, ChevronDown, Copy, Download, FolderPlus, GitFork, MoreVertical, Pencil, Play, Plus, Search, Trash2, X } from "lucide-react";
+import { Check, ChevronDown, CirclePlus, Copy, Download, FolderPlus, GitFork, MoreVertical, Pencil, Play, Plus, Search, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui-shadcn/button";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui-shadcn/alert-dialog";
 import { Input } from "@/components/ui-shadcn/input";
@@ -254,6 +254,7 @@ export function WebSidebar(props: {
 
 	/** 项目按最近打开时间降序（chat 项目恒置顶），与桌面端按时间感知一致 */
 	const sortedProjects = useMemo(() => [...state.projects].sort((a, b) => Number(b.kind === "chat") - Number(a.kind === "chat") || (b.lastOpenedAt ?? 0) - (a.lastOpenedAt ?? 0)), [state.projects]);
+	const newSessionProject = state.projects.find((project) => project.kind === "chat") ?? state.projects[0];
 
 	/** 会话按最近活动时间降序（最新在上） */
 	const sortedSessions = useMemo(() => [...state.sessions].sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0)), [state.sessions]);
@@ -321,7 +322,23 @@ export function WebSidebar(props: {
 						<X className="size-4" aria-hidden="true" />
 					</Button>
 				</div>
-				<div className="sidebar-body flex min-h-0 flex-1 flex-col gap-2 px-2 py-1">
+				<div className="sidebar-body flex min-h-0 flex-1 flex-col gap-2 px-3 py-1">
+					{/* 高频动作独立于项目树：与首页直发同取内置 chat 项目，进入后直接聚焦输入；
+					    项目行右侧的 + 仍负责「在指定项目新建」。 */}
+					{newSessionProject ? (
+						<Button
+							type="button"
+							variant="outline"
+							size="lg"
+							className="mt-3 h-10 w-full shrink-0 justify-center gap-2 rounded-full border-transparent bg-background text-control font-medium text-foreground shadow-[0_-2px_2px_rgb(72_104_178/4%),0_2px_2px_rgb(106_111_117/9%),0_1px_2px_rgb(72_104_178/8%)] hover:bg-muted/50"
+							disabled={Boolean(creatingProjectId)}
+							onClick={() => props.onCreateSession(newSessionProject.id)}
+							title={t("app.newSession")}
+						>
+							{creatingProjectId === newSessionProject.id ? <span className="size-3.5 animate-pideck-spin rounded-full border border-current border-t-transparent" aria-hidden="true" /> : <CirclePlus className="size-4" aria-hidden="true" />}
+							{t("app.newSession")}
+						</Button>
+					) : null}
 					{/* 搜索行 */}
 					<div className="search-row grid shrink-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
 						<div className="search-box relative min-w-0">

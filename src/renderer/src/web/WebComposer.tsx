@@ -15,7 +15,7 @@
  * - 无会话时禁用；流式期间提交按钮转为停止
  */
 import { useEffect, useRef, useState, type FocusEvent, type PointerEvent as ReactPointerEvent } from "react";
-import { ClipboardList, CornerDownLeft, ImagePlus, ListEnd, X } from "lucide-react";
+import { ArrowUp, ClipboardList, CornerDownLeft, ImagePlus, ListEnd, X } from "lucide-react";
 import { Button } from "@/components/ui-shadcn/button";
 import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
@@ -195,8 +195,10 @@ export function WebComposer(props: {
 				</Button>
 			</span>
 		) : (
-			<Button type="submit" size="sm" className="h-8 shrink-0 whitespace-nowrap pointer-coarse:h-10" data-testid={compact ? "web-composer-send-compact" : "web-composer-send"} disabled={props.disabled || busy || (!draft.trim() && images.length === 0)}>
-				{t("app.send")}
+			// DeepSeek 式提交钮：品牌蓝圆形箭头（视觉），可及性靠 aria-label（文案在 i18n）。
+			// 尺寸保持与同排控件同高（web-mobile-ui 的基线契约），触屏同升到 h-10。
+			<Button type="submit" size="sm" className="web-send h-8 w-8 shrink-0 rounded-full p-0 pointer-coarse:h-10 pointer-coarse:w-10" data-testid={compact ? "web-composer-send-compact" : "web-composer-send"} disabled={props.disabled || busy || (!draft.trim() && images.length === 0)} aria-label={t("app.send")}>
+				<ArrowUp className="size-4" aria-hidden="true" />
 			</Button>
 		);
 
@@ -312,7 +314,7 @@ export function WebComposer(props: {
 						) : null}
 						<div className={cn("grid shrink-0 transition-[grid-template-rows] duration-[240ms] ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none", collapsed ? "grid-rows-[0fr]" : "grid-rows-[1fr]")} data-testid="web-composer-tool-rows" inert={collapsed} aria-hidden={collapsed || undefined}>
 							<div className={cn("min-h-0 overflow-hidden transition-opacity duration-[240ms] ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none", collapsed ? "opacity-0" : "opacity-100")}>
-								<div className="flex shrink-0 items-center gap-1.5 border-t border-border/60 px-3 pt-2" data-testid="web-composer-ops-row" onPointerDown={suppressPointerFocus}>
+								<div className="flex shrink-0 items-center gap-1.5 px-3 pt-2" data-testid="web-composer-ops-row" onPointerDown={suppressPointerFocus}>
 									<span className="flex min-w-0 flex-1 flex-nowrap items-center gap-0.5 overflow-x-auto overflow-y-hidden [scrollbar-width:none]">
 										<input
 											ref={fileInputRef}

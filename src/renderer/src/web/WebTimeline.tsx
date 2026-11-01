@@ -124,7 +124,7 @@ export const WebUserBubble = memo(function WebUserBubble(props: {
 			) : (
 				<>
 					{text.trim() ? (
-						<div className={cn("w-fit min-w-0 max-w-[min(82%,64ch)] rounded-lg border border-border bg-muted/60 px-3.5 py-2.5 text-sm text-foreground [overflow-wrap:anywhere] break-words", props.flash && "web-msg-flash-ring")}>
+						<div className={cn("user-bubble w-fit min-w-0 max-w-[min(82%,64ch)] px-4 py-2.5 text-sm [overflow-wrap:anywhere] break-words", props.flash && "web-msg-flash-ring")}>
 							<div className="text-chat text-text-primary whitespace-pre-wrap break-words">{text}</div>
 						</div>
 					) : null}
@@ -747,17 +747,22 @@ export function WebTimeline(props: {
 				)}
 				{!hasActiveSession && messages.length === 0 ? (
 					<div className="empty-state">
-						<div className="empty-logo">
-							<LogoMark size={66} />
+						<div className="empty-greeting">
+							<div className="empty-logo">
+								<LogoMark size={40} />
+							</div>
+							<h1>{t("web.emptyGreeting")}</h1>
 						</div>
 						<p className="empty-hint">{t("web.emptySelection")}</p>
 					</div>
 				) : messages.length === 0 ? (
 					<div className="empty-state">
-						<div className="empty-logo">
-							<LogoMark size={66} />
+						<div className="empty-greeting">
+							<div className="empty-logo">
+								<LogoMark size={40} />
+							</div>
+							<h1>{t("web.emptyGreeting")}</h1>
 						</div>
-						<p className="empty-hint">{t("web.noMessages")}</p>
 					</div>
 				) : (
 					<>
