@@ -92,3 +92,49 @@ node tests/scrollContainerGuard.mjs --seed   # 重新生成基线
   选 2 的理由是短列表零 DOM 变化：`containerProps` 一旦传入，短列表也会多包一层 `<div>`（`virtual-stack.tsx` 短列表分支），
   而这两条的短列表本来是 `ul > li`，多一层就是「为了虚拟化改短列表的 DOM」——正是本补丁极力避免的。
   判据：**如果短列表是 `ul`/`ol`，role 不要传 `containerProps`（外层容器已经是 list）；如果短列表也是 `div`，用 `containerProps`。**
+
+
+## 七、2026-11 全量审计结论
+
+目标：不只是「未判定归零」，而是「会随数据无限变长的滚动窗，逐个判过」。
+
+盘点结果（`node tests/scrollContainerGuard.mjs`）：
+
+```text
+滚动容器 166 个：已虚拟化 14 · 已豁免 19 · 基线存量 133 · 未判定 0
+```
+
+本轮新增接入：
+
+| 接入点 | 为什么必须 | 行高 |
+| --- | --- | --- |
+| `components/agents/file-diff.tsx` | 一个文件的 diff 几千行是常态，每行一个 `AgentCodeLine` | 固定 20px（`leading-5` + `whitespace-pre` 不折行） |
+| `web/WebFilePreview.tsx` 行号文本 | 网页版打开大文件，整篇逐行渲染 | 可变（`pre-wrap` 折行），靠实测 |
+
+本轮新增豁免（附判据，不是「看着不多」）：
+
+| 位置 | 类别 | 判据 |
+| --- | --- | --- |
+| `ui-shadcn/notice-history-dialog.tsx` 表格 | `bounded` | 自带分页：`rows = filtered.slice((page-1)*PAGE_SIZE, page*PAGE_SIZE)`，一页行数封顶 |
+| `app/ProviderLoginModal.tsx` 事件日志 | `transient` | 生命周期等于一次登录弹窗，条数由 pi 的几步事件决定（几十条） |
+| `web/WebFilePreview.tsx` markdown 预览 | `text` | 整篇交给 `MarkdownStream`，按行切会拆散标题/代码块/列表结构与复制语义 |
+
+扫描器本轮修掉的两处假判：
+
+1. **变量声明冒充容器**：`const scrollClass = "overflow-auto"` 含 `overflow-` 字面量，曾被当成滚动容器；
+   真正的容器行（类名取自变量、本行没有字面量）反而扫不到，基线上留的是假指纹。
+   现在跳过「不含 `<` 的声明行」，单行 JSX 里的容器仍会扫到（`scrollContainerGuard.test.mjs` 有对应用例）。
+2. **类名抽成变量就看不见**：`file-diff` 的容器行改为内联三元，不再经 `scrollClass` 中转。
+
+基线里仍然「会变长、但本轮没接」的 5 处，以及它们卡在哪：
+
+| 位置 | 卡点 |
+| --- | --- |
+| `sidebar/SidebarContent.tsx` → `ProjectTree` | 嵌套树（项目 → 分组 → 会话），要先压平成一维行序列才能接栈 |
+| `web/WebTimeline.tsx` 消息流 | 三处依赖真实 DOM：`#web-msg-<id>` 锚点跳转、前插时的原生 scroll anchoring、贴底判定 |
+| `web/WebSidebar.tsx` 会话树 | 同 ProjectTree |
+| `web/WebWorkspaceDrawer.tsx` 文件树 | 同 ProjectTree |
+| `sidebar/AnnouncementCenter.tsx` 已读公告 | 条数受公告发布节奏限制（几十条），暂按 bounded 处理 |
+
+这 5 处是**已知缺口**，不是「判定为不需要」——接之前先解决上表第二列的卡点，否则会退回
+「跳转失效」「滚到底反弹」这类已经在时间线上踩过的坑。
