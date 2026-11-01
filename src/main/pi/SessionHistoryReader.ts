@@ -481,6 +481,36 @@ export function findTurnPageStart(entries: ReadonlyArray<{ role?: string; byteLe
 	return start;
 }
 
+/**
+ * 空页不变量：只要有更早历史（before > 0），窗口起点就必须严格小于 before。
+ *
+ * 违反它的后果不是「少显示一条」而是死循环：slice(start, before) 得空数组，而 nextBefore
+ * 仍等于 before —— 渲染层收到空页照样 prepend、把游标设成同一个值，界面逐字不变、无限重试、
+ * 完全静默（#474 记录的第二条「点了没反应」路径，修法在 main 侧）。
+ */
+export function clampTurnWindowStart(start: number, before: number): number {
+	if (before <= 0) return 0;
+	return Math.min(start, before - 1);
+}
+
+/**
+ * 解析翻页游标，返回 null 表示「明确没有更早历史」，调用方必须回空页 + nextBefore: null。
+ *
+ * beforeEntryId 是渲染层唯一的对齐锚点（运行时窗口与 JSONL 是两个下标空间）。它解析失败
+ * 且没有数值游标时，旧写法让游标落回 total（文件尾部），表现是「点加载更多反而跳回最新」，
+ * 比原地踏步更糟（#474 记录）。这里改成显式失败，让界面停下来而不是反向跳。
+ */
+export function resolveTurnPageBefore(before: number | undefined, beforeEntryId: string | undefined, entries: ReadonlyArray<{ id: string }>, total: number): number | null {
+	let resolved = before;
+	if (beforeEntryId) {
+		const position = entries.findIndex((entry) => entry.id === beforeEntryId);
+		if (position >= 0) resolved = position;
+		else if (!Number.isSafeInteger(resolved)) return null;
+	}
+	if (!Number.isSafeInteger(resolved)) return total;
+	return Math.min(Math.max(0, resolved as number), total);
+}
+
 /** 收集 [0, before) 内的 turn 起点下标（升序），规则与 findTurnPageStart 一致。 */
 function collectTurnStartIndices(entries: ReadonlyArray<{ role?: string; byteLength: number }>, before: number): number[] {
 	const starts: number[] = [];
@@ -1073,12 +1103,11 @@ export class SessionHistoryReader {
 		// beforeEntryId：渲染层以「运行时窗口首条消息的 entryId」作为首次补历史的游标，
 		// 解析为该 entry 在活跃分支的绝对下标（运行时窗口与 JSONL 是两个下标空间，
 		// entryId 是唯一的对齐锚点）。解析失败回退为 undefined（= 从尾部起页）。
-		let resolvedBefore = before;
-		if (beforeEntryId) {
-			const position = index.activeMessageEntries.findIndex((entry) => entry.id === beforeEntryId);
-			if (position >= 0) resolvedBefore = position;
+		const boundedBefore = resolveTurnPageBefore(before, beforeEntryId, index.activeMessageEntries, total);
+		// 锚点解析失败且没有数值游标：明确回「没有更早历史」，不能静默回退到尾部（#474）。
+		if (boundedBefore === null) {
+			return { messages: [], total, nextBefore: null, nextBeforeEntryId: undefined, indexVersion: `${index.mtimeMs}:${index.size}`, ...index.metadata };
 		}
-		const boundedBefore = Number.isSafeInteger(resolvedBefore) ? Math.min(Math.max(0, resolvedBefore!), total) : total;
 		const boundedTurnCount = Number.isFinite(turnCount) ? Math.min(Math.max(1, Math.floor(turnCount)), SessionHistoryReader.MAX_TURN_PAGE_SIZE) : SessionHistoryReader.DEFAULT_TURN_PAGE_SIZE;
 
 		// 预取命中：直接返回缓存页（键 = 文件版本 + 游标 + 页大小，版本变化即失效）。
@@ -1106,7 +1135,8 @@ export class SessionHistoryReader {
 	 */
 	private async readTurnPageCore(index: SessionDisplayIndex, agentId: string, boundedBefore: number, boundedTurnCount: number, entryRendererTypes: readonly string[]): Promise<SessionMessagePage> {
 		const total = index.activeMessageEntries.length;
-		const start = boundTurnWindowStart(index.activeMessageEntries, boundedBefore, boundedTurnCount, SessionHistoryReader.MAX_PAGE_WINDOW_ENTRIES);
+		// 起点必须严格小于 boundedBefore，否则 slice 得空页而 nextBefore 仍等于它（#474 死循环）。
+		const start = clampTurnWindowStart(boundTurnWindowStart(index.activeMessageEntries, boundedBefore, boundedTurnCount, SessionHistoryReader.MAX_PAGE_WINDOW_ENTRIES), boundedBefore);
 
 		// 与普通轮次页一致：压缩会话的归档语义未游标化前走索引切片
 		if (index.hasCompaction) {
