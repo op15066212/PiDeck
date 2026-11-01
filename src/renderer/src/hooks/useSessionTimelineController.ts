@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { atom, useAtomValue, useSetAtom, useStore } from "jotai";
 import { showNotice } from "../utils/notice";
-import { latestUserMessageId, SendScrollPositioner } from "./timeline/sendScroll";
+import { latestUserMessage, SendScrollPositioner } from "./timeline/sendScroll";
 import { ROOT_ROW_SELECTOR, useVisibleTimelineRows, type VisibleTimelineRow } from "./timeline/useVisibleTimelineRows";
 import { selectAtom } from "jotai/utils";
 import { desktopApi } from "../desktopApi";
@@ -430,6 +430,25 @@ export function useSessionTimelineController(options: { sessionId?: string; mess
 	const messages = options.messages ?? cachedMessages ?? [];
 	const controllerEnabled = options.sessionId !== undefined && options.messages === undefined;
 
+	// 锚点 id 归一映射：pi 预热激活运行时会把磁盘页投影 id `_viewer-history-X` 改写为
+	// `<agentId>-history-X`（meta.entryId 不变，跨 incarnation 也稳定）。锚点按裸 id
+	// 保存/恢复会在改写后 miss，扩窗重试后降级跳顶、丢阅读位置。保存时附 entryId，
+	// 恢复 miss 时按它反查当前 id。ref 直写与 ownerKeyRef 同模式，热路径读不加依赖。
+	const anchorEntryIdMapsRef = useRef<{ byId: Map<string, string>; byEntryId: Map<string, string> }>({ byId: new Map(), byEntryId: new Map() });
+	const anchorEntryIdMaps = useMemo(() => {
+		const byId = new Map<string, string>();
+		const byEntryId = new Map<string, string>();
+		for (const message of messages) {
+			const entryId = message.meta?.entryId;
+			if (typeof entryId !== "string" || !entryId) continue;
+			byId.set(message.id, entryId);
+			// 同 entryId 短暂多 id（重投影过渡帧）时保留最后写入者：flush 顺序即最新投影。
+			byEntryId.set(entryId, message.id);
+		}
+		return { byId, byEntryId };
+	}, [messages]);
+	anchorEntryIdMapsRef.current = anchorEntryIdMaps;
+
 	// ── 会话切换滚动位置保持（状态即真相）──
 	// 滚动节流直接写 per-session atom（内容不变跳过 → 引用稳定 → 零订阅重渲染）；
 	// 恢复 = 切换时从 atom 读一次快照执行，不订阅（后续滚动写 atom 不打扰已恢复的视口）。
@@ -498,6 +517,7 @@ export function useSessionTimelineController(options: { sessionId?: string; mess
 		if (anchorRow) {
 			return {
 				messageId: anchorRow.id,
+				entryId: anchorEntryIdMapsRef.current.byId.get(anchorRow.id),
 				offsetTop: anchorRow.top,
 				windowTurns: renderedWindowTurnsRef.current,
 				savedAt: Date.now(),
@@ -512,6 +532,7 @@ export function useSessionTimelineController(options: { sessionId?: string; mess
 				if (!messageId) continue;
 				return {
 					messageId,
+					entryId: anchorEntryIdMapsRef.current.byId.get(messageId),
 					// 保留负偏移：视口顶部常被上一行底部占据（行顶在视口上方），
 					// 截断为 0 会导致恢复时把行顶对齐视口顶、整体位置偏下（高大行偏差明显）。
 					// 恢复侧 scrollTop = max(0, elTop - offsetTop) 已兜底负值。
@@ -824,9 +845,10 @@ export function useSessionTimelineController(options: { sessionId?: string; mess
 	 */
 	const userScrollIntentFrameRef = useRef<number | undefined>(undefined);
 	const settleScrollCancelRef = useRef<(() => void) | undefined>(undefined);
-	/** 发送定位只比较 user 身份变化；首帧/切会话取基线，不重播历史消息。 */
+	/** 发送定位只比较 user 身份变化；首帧/切会话取基线，不重播历史消息。
+	 * entryId 随基线记录：预热重投影把同一消息换 id 时，靠它判等避免误触发定位。 */
 	const sendScrollRef = useRef(new SendScrollPositioner());
-	const sendMessageBaselineRef = useRef<{ ownerKey: string; messageId: string | undefined } | undefined>(undefined);
+	const sendMessageBaselineRef = useRef<{ ownerKey: string; messageId: string | undefined; entryId: string | undefined } | undefined>(undefined);
 	/**
 	 * 恢复阶段收到的用户提交：先挂起，等 restorePhase 完成再补一次发送定位。
 	 *
@@ -1260,10 +1282,11 @@ export function useSessionTimelineController(options: { sessionId?: string; mess
 		[invalidateHistoryBrowsing],
 	);
 
-	const sendMessageId = latestUserMessageId(messages);
+	const sendMessage = latestUserMessage(messages);
+	const sendMessageId = sendMessage?.id;
 	useLayoutEffect(() => {
 		const baseline = sendMessageBaselineRef.current;
-		sendMessageBaselineRef.current = { ownerKey, messageId: sendMessageId };
+		sendMessageBaselineRef.current = { ownerKey, messageId: sendMessageId, entryId: sendMessage?.entryId };
 		if (!baseline || baseline.ownerKey !== ownerKey) return;
 		// 用户关掉「发送消息后自动滚动到最新」：发送不动视口，也不登记挂起定位。
 		// baseline 仍照常推进（上面已写），否则重新打开开关后会把这条旧发送误判成新消息再拽一次。
@@ -1275,6 +1298,18 @@ export function useSessionTimelineController(options: { sessionId?: string; mess
 			return;
 		}
 		const changed = Boolean(sendMessageId) && baseline.messageId !== sendMessageId;
+		// 预热激活后 pi 运行时首次全量 flush 会把磁盘页投影（_viewer-history-X）换成运行时投影
+		//（<agentId>-history-X）：同一条消息改写 id，不是一次新发送。若按 changed 触发发送定位，
+		// 历史会话在输入框打字预热时会整页跳动到末条消息再回底。新旧两侧都有 entryId 且相等
+		// 才判等：乐观气泡无 entryId、无 entryId 的后端（DSH 等）保持原 changed 语义。
+		const reprojectedSameMessage = sendMessageId !== undefined && Boolean(changed) && baseline.entryId !== undefined && sendMessage?.entryId !== undefined && baseline.entryId === sendMessage.entryId;
+		if (reprojectedSameMessage) {
+			// 只把既有定位/挂起状态迁到新 id，不触发 pin、不登记新挂起。
+			if (positionedSendMessageRef.current === baseline.messageId) positionedSendMessageRef.current = sendMessageId;
+			const pending = pendingSendScrollRef.current;
+			if (pending?.ownerKey === ownerKey && pending.messageId === baseline.messageId) pending.messageId = sendMessageId;
+			return;
+		}
 		// 发送态用于区分「用户提交」和「读盘/投影填充历史」：部分单测沙箱会整体 stub
 		// ../atoms 后单独加载真实模块，缺这个 atom 时按「无在途发送」处理（生产恒存在）。
 		const sendState = options.sessionId && sessionSendStateByIdAtom != null ? store.get(sessionSendStateByIdAtom)[options.sessionId] : undefined;
@@ -1724,7 +1759,14 @@ export function useSessionTimelineController(options: { sessionId?: string; mess
 		const frame = requestAnimationFrame(() => {
 			const timeline = timelineRef.current;
 			if (!timeline || ownerKeyRef.current !== requestOwnerKey) return;
-			const el = timeline.querySelector(`[data-message-id="${CSS.escape(anchor.messageId)}"]`) as HTMLElement | null;
+			// 锚点 id 可能已被重投影改写（预热激活/pi 重启换投影前缀，entryId 不变）：
+			// 先按保存的裸 id 找，miss 时按 entryId 反查当前 id 再试。
+			let anchorRowId = anchor.messageId;
+			if (anchor.entryId && !timeline.querySelector(`[data-message-id="${CSS.escape(anchorRowId)}"]`)) {
+				const remapped = anchorEntryIdMapsRef.current.byEntryId.get(anchor.entryId);
+				if (remapped && timeline.querySelector(`[data-message-id="${CSS.escape(remapped)}"]`)) anchorRowId = remapped;
+			}
+			const el = timeline.querySelector(`[data-message-id="${CSS.escape(anchorRowId)}"]`) as HTMLElement | null;
 			if (el) {
 				const elTop = el.getBoundingClientRect().top - timeline.getBoundingClientRect().top + timeline.scrollTop;
 				markProgrammaticScroll();
@@ -1741,7 +1783,8 @@ export function useSessionTimelineController(options: { sessionId?: string; mess
 				// 恢复后的位置即当前锚点：即使恢复后用户未滚动就切走，cleanup
 				// 落盘的也是这份锚点（而不是误判为底部/空）。恢复前后的渲染窗口都
 				// 由 anchor.windowTurns 决定，因此 complete 不会再收缩 DOM 并截断 targetTop。
-				currentAnchorRef.current = anchor;
+				// entryId 反查命中时同步落新 id，避免下次恢复再走一遍反查。
+				currentAnchorRef.current = anchorRowId === anchor.messageId ? anchor : { ...anchor, messageId: anchorRowId };
 				setRestorePhase("complete");
 				return;
 			}

@@ -318,6 +318,8 @@ export const sessionMessageCacheBySessionIdAtomFamily = atomFamily((sessionId: s
 export type SessionScrollAnchor = {
 	/** 锚点行 id（timeline 内 [data-message-id] 的值：可能是 run id 或消息 id） */
 	messageId: string;
+	/** 锚点行的 meta.entryId：pi 预热重投影/pi 重启会改写投影 id 前缀，恢复时按它反查当前 id */
+	entryId?: string;
 	/** 锚点行顶边相对视口顶部的偏移（px），恢复时按此对齐 */
 	offsetTop: number;
 	/**
@@ -337,7 +339,7 @@ export const sessionScrollAnchorByIdAtom = atom<Record<string, SessionScrollAnch
 export function sameSessionScrollAnchor(a: SessionScrollAnchor | undefined, b: SessionScrollAnchor | undefined): boolean {
 	if (a === b) return true;
 	if (!a || !b) return false;
-	return a.messageId === b.messageId && a.offsetTop === b.offsetTop && a.windowTurns === b.windowTurns;
+	return a.messageId === b.messageId && a.entryId === b.entryId && a.offsetTop === b.offsetTop && a.windowTurns === b.windowTurns;
 }
 
 /** 保存/清除某会话的滚动锚点。anchor 为 null 时清除（如回到底部或会话关闭）。

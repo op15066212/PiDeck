@@ -123,6 +123,15 @@ test("scroll events synchronously retain an anchor before a same-task session sw
 	assert.match(source, /currentAnchorRef\.current = computeCurrentAnchor\(scrollVisibleRowsRef\.current\);/);
 });
 
+test("scroll anchors stay restorable across pi reprojection (entryId normalization)", () => {
+	// pi 预热重投影把投影 id 前缀 `_viewer-history-X` 改写为 `<agentId>-history-X`（entryId
+	// 不变）：锚点保存必须附带 entryId，恢复 miss 时按它反查当前 id，而不是扩窗后降级跳顶。
+	assert.match(source, /entryId: anchorEntryIdMapsRef\.current\.byId\.get\(anchorRow\.id\)/);
+	assert.match(source, /entryId: anchorEntryIdMapsRef\.current\.byId\.get\(messageId\)/);
+	assert.match(source, /const remapped = anchorEntryIdMapsRef\.current\.byEntryId\.get\(anchor\.entryId\);/);
+	assert.match(source, /currentAnchorRef\.current = anchorRowId === anchor\.messageId \? anchor : \{ \.\.\.anchor, messageId: anchorRowId \};/);
+});
+
 test("scroll anchors prefer stable turn roots over collapsible execution children", () => {
 	// 工具卡/思考步骤会随执行过程自动收起卸载；优先 user / run 根节点才能在
 	// 切回时仍找到同一 messageId，而非退化到顶部。

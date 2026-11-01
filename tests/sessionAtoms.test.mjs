@@ -1470,6 +1470,31 @@ test("saveSessionScrollAnchorAtom: identical content skips write (stable referen
 	assert.equal(store.get(atoms.sessionScrollAnchorByIdAtom)["session-a"].offsetTop, 300);
 });
 
+test("saveSessionScrollAnchorAtom: reprojected same-entryId anchor overwrites so restore finds the current id", () => {
+	const store = createStore();
+	const atoms = loadAtoms();
+
+	// pi 预热重投影：同一消息（entryId 不变）投影 id 前缀被改写。锚点必须覆盖写入，
+	// 否则切回时恢复路径按旧 id 查不到，降级跳顶丢阅读位置。
+	store.set(atoms.saveSessionScrollAnchorAtom, {
+		sessionId: "session-a",
+		anchor: { messageId: "_viewer-history-9", entryId: "e9", offsetTop: 120, windowTurns: 9, savedAt: 100 },
+	});
+	store.set(atoms.saveSessionScrollAnchorAtom, {
+		sessionId: "session-a",
+		anchor: { messageId: "agent-history-9", entryId: "e9", offsetTop: 120, windowTurns: 9, savedAt: 200 },
+	});
+	assert.equal(store.get(atoms.sessionScrollAnchorByIdAtom)["session-a"].messageId, "agent-history-9");
+
+	// 同 id 同 entryId（仅 savedAt 变化）仍跳过：引用稳定语义不变。
+	const current = store.get(atoms.sessionScrollAnchorByIdAtom)["session-a"];
+	store.set(atoms.saveSessionScrollAnchorAtom, {
+		sessionId: "session-a",
+		anchor: { messageId: "agent-history-9", entryId: "e9", offsetTop: 120, windowTurns: 9, savedAt: 300 },
+	});
+	assert.equal(store.get(atoms.sessionScrollAnchorByIdAtom)["session-a"], current);
+});
+
 test("opened tabs survive cache LRU eviction (switch-back must not re-read disk)", () => {
 	const atoms = loadAtoms();
 	const store = createStore();
