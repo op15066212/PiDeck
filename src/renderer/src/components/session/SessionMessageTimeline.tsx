@@ -974,16 +974,16 @@ export function SessionMessageTimeline(props: SessionMessageTimelineProps) {
 				>
 					<button
 						onClick={() => {
-							// 窗口裁剪生效时先扩大渲染窗口（显示已加载的更早内容）；
-							// 窗口已覆盖全部已加载数据且还有历史时才翻数据页。
-							// 数据翻页补偿（loadMoreAnchorRef）与窗口扩大补偿（turnWindowStateRef）
-							// 发生在不同帧，不会双重补偿。
-							if (turnWindowActive) {
-								controller.expandWindow();
-							} else if (hasMoreMessages && canLoadMoreMessages) {
+							// 有历史数据页就先翻数据：按钮写的是「加载更多对话」，用户要的是更多内容，
+							// 不是「把已加载的挂出来」。反过来（先 expandWindow）每次点击只扩 3 轮渲染
+							// 窗口、数据一步不走 —— 137 轮会话要点 45 次才轮到第一次翻页，观感就是
+							// 「点了没反应」（2026-11 真机反馈）。
+							if (hasMoreMessages && canLoadMoreMessages) {
 								// source 必须是 button：贴底时 loadMoreMessages 要按「显式请求」处理，
 								// 先脱离跟随再翻页。传 scroll 会被迟到的 following 门整条丢弃（界面零变化）。
 								loadMoreMessages("button");
+							} else if (turnWindowActive) {
+								controller.expandWindow();
 							}
 						}}
 						disabled={isLoadingMoreMessages}

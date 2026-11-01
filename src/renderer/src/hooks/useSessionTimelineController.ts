@@ -4,6 +4,7 @@ import { showNotice } from "../utils/notice";
 import { latestUserMessage, SendScrollPositioner } from "./timeline/sendScroll";
 import { ROOT_ROW_SELECTOR, useVisibleTimelineRows, type VisibleTimelineRow } from "./timeline/useVisibleTimelineRows";
 import { capWindowTurns, planWindowExpandBatch } from "../components/session/timeline/windowExpandPlan";
+import { resolveHistoryPageSize, resolvePageWindowGrowth } from "../components/session/timeline/historyPagePolicy";
 import { selectAtom } from "jotai/utils";
 import { desktopApi } from "../desktopApi";
 import type { AgentRuntimeState, ChatMessage, SessionMessagePage, SessionRecord } from "../../../shared/types";
@@ -85,16 +86,6 @@ const NO_CACHE_ENTRY_ATOM = atom(undefined);
 // 避免流式消息频繁触发 ResizeObserver/MutationObserver 把用户弹回底部造成"颤抖"。
 const BOTTOM_THRESHOLD = 16;
 const LEGACY_OWNER_KEY = "legacy";
-/** runtime 窗口会话「加载更多对话」的单页轮数（与主进程 DEFAULT_TURN_PAGE_SIZE 对齐） */
-const RUNTIME_HISTORY_TURN_PAGE_SIZE = 3;
-/** 翻页成功后仅开放实际带回的 cohort，防止消息页大小与 DOM 窗口脱节。
- *  disk 消息页不一定以 user 消息开头（可能在长回答中间切断）；只要页非空就至少开放 1 轮，
- *  否则新增 agent-run 会被尾部窗口裁掉，出现「数据已加载但看不见」的无反馈。 */
-function resolvePageWindowGrowth(messages: readonly ChatMessage[]): number {
-	if (messages.length === 0) return 0;
-	const turns = countUserTurns(messages);
-	return Math.min(TIMELINE_WINDOW_EXPAND_STEP, Math.max(1, turns));
-}
 
 type Tagged<T> = { ownerKey: string; value: T };
 type TimelineAnchor = {
@@ -1450,6 +1441,7 @@ export function useSessionTimelineController(options: { sessionId?: string; mess
 
 	const loadMoreMessages = useCallback(
 		(source: "scroll" | "button" | "backfill" = "scroll") => {
+			const pageSize = resolveHistoryPageSize(source);
 			const requestOwnerKey = ownerKey;
 			const timeline = timelineRef.current;
 			// 按钮点击是显式请求：先脱离贴底跟随，再抓浏览钉行。顺序不能反——captureBrowsePin
@@ -1484,7 +1476,7 @@ export function useSessionTimelineController(options: { sessionId?: string; mess
 				// 重试时先清掉上一次的错误行
 				setLoadMoreError(null);
 				void desktopApi.sessions
-					.readRecordMessagePage(sessionId, before, RUNTIME_HISTORY_TURN_PAGE_SIZE)
+					.readRecordMessagePage(sessionId, before, pageSize)
 					.then((page: SessionMessagePage) => {
 						if (latestLoadBySession.get(sessionId) !== sequence) return;
 						// 翻页期间 host 被停：保留已加载内容，出可辨识的失败行（静默丢弃这一页
@@ -1507,7 +1499,7 @@ export function useSessionTimelineController(options: { sessionId?: string; mess
 									explicit: source === "button" || source === "backfill",
 								})
 							) {
-								const growth = resolvePageWindowGrowth(page.messages);
+								const growth = resolvePageWindowGrowth(page.messages, pageSize);
 								if (growth > 0) expandWindowBatched(growth);
 							}
 						} else {
@@ -1560,7 +1552,7 @@ export function useSessionTimelineController(options: { sessionId?: string; mess
 				// 重试时先清掉上一次的错误行
 				setLoadMoreError(null);
 				void desktopApi.sessions
-					.readRecordMessagePage(sessionId, before ?? (anchorFilePos !== undefined ? anchorFilePos : undefined), RUNTIME_HISTORY_TURN_PAGE_SIZE, {
+					.readRecordMessagePage(sessionId, before ?? (anchorFilePos !== undefined ? anchorFilePos : undefined), pageSize, {
 						beforeEntryId: anchorEntryId ?? runtimeHistory?.nextBeforeEntryId ?? undefined,
 					})
 					.then((page: SessionMessagePage) => {
@@ -1583,7 +1575,7 @@ export function useSessionTimelineController(options: { sessionId?: string; mess
 									explicit: source === "button" || source === "backfill",
 								})
 							) {
-								const growth = resolvePageWindowGrowth(page.messages);
+								const growth = resolvePageWindowGrowth(page.messages, pageSize);
 								if (growth > 0) expandWindowBatched(growth);
 							}
 						} else {
