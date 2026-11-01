@@ -196,3 +196,26 @@ export function planRailPendingStep(input: {
 	if (input.hasMoreMessages && !input.loadFailed && input.attempts < input.maxAttempts) return "load";
 	return "settle";
 }
+
+/**
+ * 上一次补页是否「白补了」：发过一页、没在加载、已加载条数却没涨。
+ *
+ * 为什么必须单独判：续页锚点原地踏步或文件已到顶时，继续发只会空转到保险丝；
+ * 而被动 effect 里连发 setState 正是 React #185 的直接成因（2026-11 真机：
+ * 点大纲最上面的刻度 →「界面渲染异常」）。白补一次就交回落位逻辑。
+ *
+ * 判据里的 entryId 必须一起比：换了目标（用户点了别的刻度）时计数相同不代表停滞。
+ */
+export function isRailLoadStalled(input: {
+	/** 上一轮记下的目标 entryId。 */
+	previousEntryId: string | undefined;
+	targetEntryId: string;
+	/** 上一轮记下的已加载条数。 */
+	previousCount: number;
+	loadedCount: number;
+	/** 已经真正发起的补页次数。 */
+	attempts: number;
+	isLoadingMore: boolean;
+}): boolean {
+	return input.previousEntryId === input.targetEntryId && input.attempts > 0 && input.previousCount === input.loadedCount && !input.isLoadingMore;
+}

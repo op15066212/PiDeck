@@ -3,6 +3,7 @@ import { atom, useAtomValue, useSetAtom, useStore } from "jotai";
 import { showNotice } from "../utils/notice";
 import { latestUserMessage, SendScrollPositioner } from "./timeline/sendScroll";
 import { ROOT_ROW_SELECTOR, useVisibleTimelineRows, type VisibleTimelineRow } from "./timeline/useVisibleTimelineRows";
+import { capWindowTurns, planWindowExpandBatch } from "../components/session/timeline/windowExpandPlan";
 import { selectAtom } from "jotai/utils";
 import { desktopApi } from "../desktopApi";
 import type { AgentRuntimeState, ChatMessage, SessionMessagePage, SessionRecord } from "../../../shared/types";
@@ -50,13 +51,7 @@ export const HISTORY_AUTO_LOAD_THRESHOLD = 8;
 const HISTORY_AUTO_LOAD_COOLDOWN_MS = 300;
 /** 自动扩窗口冷却（ms）：防惯性滚动接近顶部时连扩多轮（与翻页冷却同量级）。 */
 const TURN_WINDOW_AUTO_EXPAND_COOLDOWN_MS = 300;
-/** 分批扩展：每帧最多挂载的轮数。
- *  一个 3 轮 cohort 拆成 2+1 两帧，避免本地 DOM 扩展在同一帧集中渲染。 */
-const TURN_WINDOW_EXPAND_BATCH_TURNS = 2;
-/** 一条 rAF 链上允许逐帧消费的轮数上限。补页一路补到很早的历史时，每页都会排一批扩窗，
- *  待扩量累计可达上百轮；按帧小口消费会让 setState 在一条链上连发上百次，React 抛 #185
- *  （2026-11 真机：点大纲最上面的刻度 →「界面渲染异常」）。超过上限就一次性推开。 */
-const TURN_WINDOW_EXPAND_MAX_CHAIN_TURNS = 24;
+/** 分批扩窗的轮数预算与封顶算法在 windowExpandPlan（纯函数，便于行为测试）。 */
 
 let nextLoadSequence = 0;
 /** 新建空会话的跨挂载粘性：切 Tab 时 ChatSessionPane/hook 会销毁重建，useRef 粘性会丢失导致切回闪骨架。
@@ -1016,12 +1011,11 @@ export function useSessionTimelineController(options: { sessionId?: string; mess
 		// 上限是 50，超了直接抛 #185 把整窗打掉。这种量级一次性推开：多挂几十轮的开销
 		// 远小于崩溃。
 		const backlog = pendingExpandTurnsRef.current;
-		const batch = backlog > TURN_WINDOW_EXPAND_MAX_CHAIN_TURNS ? backlog : Math.min(TURN_WINDOW_EXPAND_BATCH_TURNS, backlog);
+		const batch = planWindowExpandBatch(pendingExpandTurnsRef.current);
 		pendingExpandTurnsRef.current -= batch;
-		// 轮数上限 = 已加载消息数：到顶就不再涨。窗口一路涨到几百轮会让每次扩窗都重挂整表，
-		// 也是 2026-11 那次整窗崩溃的温床。
+		// 轮数上限 = 已加载消息数：到顶就不再涨（封顶与不缩回的取舍见 windowExpandPlan）。
 		const windowCap = Math.max(loadedMessageCountRef.current, TIMELINE_SCROLLED_TURN_LIMIT);
-		setScrolledWindowTurns((prev) => Math.min(prev + batch, Math.max(prev, windowCap)));
+		setScrolledWindowTurns((prev) => capWindowTurns(prev, batch, windowCap));
 		if (pendingExpandTurnsRef.current > 0) {
 			// 还有剩余：下一帧继续消费，摊平布局/渲染压力
 			expandBatchFrameRef.current = window.requestAnimationFrame(consumeExpandBatch);

@@ -26,7 +26,9 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const BASELINE_FILE = join(ROOT, "scripts/testShapeBaseline.json");
 const UPDATE = process.argv.includes("--update");
 
-const SOURCE_READ = [/readFileSync\(\s*["'`]src\//, /readFileSync\(\s*`\$\{root\}/, /readFileSync\(\s*join\(\s*["'`]src\//];
+// `readFileSync(new URL("../src/…", import.meta.url))` 也要算：2026-11 那个「分批扩窗」守卫
+// 就是用这个写法躲过门禁的——三条正则都没覆盖它，于是被当成行为测试放行。
+const SOURCE_READ = [/readFileSync\(\s*["'`]src\//, /readFileSync\(\s*`\$\{root\}/, /readFileSync\(\s*join\(\s*["'`]src\//, /readFileSync\(\s*new URL\(\s*["'`]\.\.\/src\//];
 const SOURCE_ROOT_DECL = /\b(?:const|let)\s+\w*(?:root|Root|SRC|src)\w*\s*=\s*["'`]src\//;
 // 说明：`loadTsCommonJs(MODULE)`（路径先存常量再传入）同样是运行时加载真模块，
 // 但字面量正则识别不到，会被误判成 sourceOnly（changelogSections / rendererVirtualization 就是如此）。
