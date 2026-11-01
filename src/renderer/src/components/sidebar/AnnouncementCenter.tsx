@@ -166,7 +166,7 @@ function AnnouncementDetailDrawer(props: { item: AnnouncementItem | null; onClos
 							<X className="size-4" />
 						</Button>
 					</header>
-					// scroll-ok: bounded —— 行数有硬上限（受控分页 / 上限常量 / 固定枚举），不随数据无限增长。
+					{/* scroll-ok: bounded —— 行数有硬上限（受控分页 / 上限常量 / 固定枚举），不随数据无限增长。 */}
 					<div
 						ref={scrollRef}
 						onWheel={(event) => {

@@ -54,7 +54,7 @@ function TraceBlockView({ block }: { block: TraceBlock }) {
 						<Wrench className="size-3 text-muted-foreground" aria-hidden="true" />
 						{block.name}
 					</div>
-					// scroll-ok: text —— 单一文本块（pre / markdown 正文），没有行列表可切，虚拟化无从下手。
+					{/* scroll-ok: text —— 单一文本块（pre / markdown 正文），没有行列表可切，虚拟化无从下手。 */}
 					{block.args ? <pre className={`overflow-auto rounded bg-background/60 p-1.5 font-mono text-micro leading-snug ${BLOCK_MAX_H}`}>{block.args}</pre> : null}
 				</div>
 			);

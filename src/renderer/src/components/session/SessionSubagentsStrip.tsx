@@ -174,7 +174,7 @@ export const PiSubagentEntryRow = (props: {
 						{lost && <p className="rounded border border-danger/30 bg-danger-soft px-2 py-1.5 text-danger">{t("sessionSubagents.lostHint")}</p>}
 						{entry.description && <p className="whitespace-pre-wrap break-words">{entry.description}</p>}
 						{entry.error && <div className="whitespace-pre-wrap break-words rounded border border-danger/30 bg-danger-soft px-2 py-1.5 text-danger">{entry.error}</div>}
-						// scroll-ok: text —— 单一文本块（pre / markdown 正文），没有行列表可切，虚拟化无从下手。
+						{/* scroll-ok: text —— 单一文本块（pre / markdown 正文），没有行列表可切，虚拟化无从下手。 */}
 						{entry.result && <div className="max-h-32 overflow-y-auto whitespace-pre-wrap break-words rounded bg-muted/50 px-2 py-1.5">{entry.result}</div>}
 						{(entry.childSessionId || hasLongText) && (
 							<div className="flex flex-wrap items-center gap-2 pt-0.5">

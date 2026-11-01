@@ -111,7 +111,7 @@ function WebSubagentsStrip({ subagents }: { subagents: PiSubagentEntry[] }) {
 	const ItemTag: "li" | "div" = virtualizeRows ? "div" : "li";
 	return (
 		<StripShell icon={<Sparkles className="size-3.5" />} title={t("web.subagentsStripTitle")} count={subagents.length}>
-			// scroll-ok: text —— 单一文本块（pre / markdown 正文），没有行列表可切，虚拟化无从下手。
+			{/* scroll-ok: text —— 单一文本块（pre / markdown 正文），没有行列表可切，虚拟化无从下手。 */}
 			<ListTag ref={listRef} className="flex max-h-40 flex-col gap-1 overflow-y-auto">
 				<VirtualStack
 					items={subagents}

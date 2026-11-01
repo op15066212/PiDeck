@@ -1020,7 +1020,7 @@ function ModelListStatusGuide(props: { report: ModelListReport | null; refreshin
 				{hardFailure ? t("app.modelListLoadFailed") : t("app.modelListEmptyTitle")}
 			</div>
 			<p className="text-caption leading-relaxed text-muted-foreground">{t(textKey)}</p>
-			// scroll-ok: text —— 单一文本块（pre / markdown 正文），没有行列表可切，虚拟化无从下手。
+			{/* scroll-ok: text —— 单一文本块（pre / markdown 正文），没有行列表可切，虚拟化无从下手。 */}
 			{report.detail && <pre className="max-h-28 w-full overflow-auto whitespace-pre-wrap break-all rounded-md border border-border/60 bg-muted/40 p-2.5 font-mono text-micro leading-relaxed text-muted-foreground">{report.detail}</pre>}
 			{props.onRefresh && (
 				<Button variant="outline" size="sm" className="mt-1" onClick={props.onRefresh} disabled={props.refreshing}>

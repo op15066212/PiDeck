@@ -463,7 +463,7 @@ export const DshConfigTab = forwardRef<
 						<p className="mt-1 text-caption leading-relaxed text-danger/90">{t("config.dsh.bootFailedHint")}</p>
 						{/* 真实失败原因：优先 host boot 详情（getStatus().bootError），退回 IPC 错误原文；
 						    失败是确定性的（runtime 损坏/依赖缺失等），重试前先让用户看到原因。 */}
-						// scroll-ok: text —— 单一文本块（pre / markdown 正文），没有行列表可切，虚拟化无从下手。
+						{/* scroll-ok: text —— 单一文本块（pre / markdown 正文），没有行列表可切，虚拟化无从下手。 */}
 						{(status?.bootError || error) && <pre className="mt-2 max-h-44 overflow-auto whitespace-pre-wrap rounded-sm border border-danger/20 bg-bg-panel/60 px-2.5 py-2 text-micro leading-relaxed text-danger/90">{status?.bootError || stripIpcErrorPrefix(error)}</pre>}
 						<div className="mt-2.5 flex gap-2">
 							<Button type="button" variant="secondary" size="sm" className="h-7" onClick={() => void load()}>
