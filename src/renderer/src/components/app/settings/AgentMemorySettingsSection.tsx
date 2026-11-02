@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
-import { Download, RefreshCw, Upload } from "lucide-react";
+import { Download, FolderOpen, Pencil, RefreshCw, Upload } from "lucide-react";
 import type { AgentMemoryBundlePeekOutcome, AgentMemoryStatus } from "../../../../../shared/types/agentMemory";
 import { t } from "../../../i18n";
 import { desktopApi } from "../../../desktopApi";
 import { Button } from "../../ui-shadcn/button";
 import { ConfirmDialog } from "../../ui-shadcn/ConfirmDialog";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "../../ui-shadcn/dialog";
+import { Input } from "../../ui-shadcn/input";
 import { SettingRow } from "./SettingRows";
 import { AgentMemoryExportDialog } from "./AgentMemoryExportDialog";
 import { AgentMemoryImportDialog } from "./AgentMemoryImportDialog";
@@ -35,6 +37,8 @@ export function AgentMemorySettingsSection(props: {
 	reloadKey?: number;
 	/** 本面板的动作改过记忆后通知兄弟面板刷新。 */
 	onChanged?: () => void;
+	/** 自动学习开关：开着才显示「上次学习」行——关着时没学过是常态，显示只会让人困惑。 */
+	showLearn?: boolean;
 }) {
 	const [status, setStatus] = useState<AgentMemoryStatus | null>(null);
 	const [busy, setBusy] = useState<"none" | "preview" | "clear">("none");
@@ -42,6 +46,7 @@ export function AgentMemorySettingsSection(props: {
 	const [error, setError] = useState<string | null>(null);
 	const [confirmClear, setConfirmClear] = useState(false);
 	const [exportOpen, setExportOpen] = useState(false);
+	const [renameOpen, setRenameOpen] = useState(false);
 	const [importPreview, setImportPreview] = useState<Extract<AgentMemoryBundlePeekOutcome, { canceled: false }> | null>(null);
 
 	const refresh = useCallback(async () => {
@@ -75,6 +80,11 @@ export function AgentMemorySettingsSection(props: {
 		}
 	};
 
+	const runReveal = async () => {
+		const result = await desktopApi.agentMemory.revealRoot();
+		if (!result.ok) setError(describeAgentMemoryCode(result.code));
+	};
+
 	const runClear = async () => {
 		setConfirmClear(false);
 		setBusy("clear");
@@ -99,6 +109,12 @@ export function AgentMemorySettingsSection(props: {
 			].join(" · ")
 		: t("common.loading");
 
+	const learnSummary = status
+		? status.learn.lastAt
+			? t("settings.agentMemoryLearnLast", { count: String(status.learn.sessions), time: new Date(status.learn.lastAt).toLocaleString() })
+			: t("settings.agentMemoryLearnNever")
+		: null;
+
 	return (
 		<>
 			<SettingRow anchor="memory-usage" title={t("settings.agentMemoryUsage")} description={summary}>
@@ -111,12 +127,21 @@ export function AgentMemorySettingsSection(props: {
 						<Upload size={14} strokeWidth={2} aria-hidden="true" />
 						{t("settings.agentMemoryImport")}
 					</Button>
-					<Button type="button" variant="outline" size="sm" disabled={busy !== "none" || !status?.index} onClick={() => setConfirmClear(true)}>
+					<Button type="button" variant="outline" size="sm" disabled={busy !== "none" || !status} onClick={() => void runReveal()}>
+					<FolderOpen size={14} strokeWidth={2} aria-hidden="true" />
+					{t("settings.agentMemoryOpenFolder")}
+				</Button>
+				<Button type="button" variant="outline" size="sm" disabled={busy !== "none" || !status} onClick={() => setRenameOpen(true)}>
+					<Pencil size={14} strokeWidth={2} aria-hidden="true" />
+					{t("common.rename")}
+				</Button>
+				<Button type="button" variant="outline" size="sm" disabled={busy !== "none" || !status?.index} onClick={() => setConfirmClear(true)}>
 						<RefreshCw size={14} strokeWidth={2} aria-hidden="true" />
 						{t("settings.agentMemoryClearIndex")}
 					</Button>
 				</span>
 			</SettingRow>
+			{props.showLearn && learnSummary ? <p className="px-4 pb-2 text-xs text-muted-foreground">{learnSummary}</p> : null}
 			{status?.indexError ? <p className="px-4 pb-2 text-xs text-muted-foreground">{t("settings.agentMemoryIndexDegraded", { reason: status.indexError })}</p> : null}
 			{error ? <p className="px-4 pb-2 text-xs text-destructive">{error}</p> : null}
 			{message ? <p className="px-4 pb-2 text-xs text-muted-foreground">{message}</p> : null}
@@ -160,6 +185,45 @@ export function AgentMemorySettingsSection(props: {
 				/>
 			) : null}
 			{confirmClear ? <ConfirmDialog title={t("settings.agentMemoryClearIndex")} message={t("settings.agentMemoryClearConfirm")} confirmLabel={t("settings.agentMemoryClearIndex")} danger onConfirm={() => void runClear()} onCancel={() => setConfirmClear(false)} /> : null}
+			{renameOpen && status ? <AgentDeviceRenameDialog current={status.device.name} onDone={(name) => { setRenameOpen(false); if (name) setMessage(t("settings.agentMemoryDeviceRenamed", { name })); void refresh(); }} onCancel={() => setRenameOpen(false)} onError={setError} /> : null}
 		</>
+	);
+}
+
+/**
+ * 设备改名弹窗：设备 id 永不改变（设备记忆靠 id 落目录），这里只改显示名。
+ * 空名按取消处理（sync 层会拒，这里在 UI 侧直接禁用保存更直观）。
+ */
+function AgentDeviceRenameDialog(props: { current: string; onDone: (name: string | null) => void; onCancel: () => void; onError: (text: string) => void }) {
+	const [name, setName] = useState(props.current);
+	const [busy, setBusy] = useState(false);
+	const trimmed = name.trim();
+
+	const runSave = async () => {
+		setBusy(true);
+		try {
+			const result = await desktopApi.agentMemory.renameDevice(trimmed);
+			if (result.ok) props.onDone(result.value.name);
+			else props.onError(describeAgentMemoryCode(result.code));
+		} catch (cause) {
+			props.onError(cause instanceof Error ? cause.message : String(cause));
+		} finally {
+			setBusy(false);
+		}
+	};
+
+	return (
+		<Dialog open onOpenChange={(open) => { if (!open) props.onCancel(); }}>
+			<DialogContent className="max-w-md">
+				<DialogHeader>
+					<DialogTitle>{t("settings.agentMemoryDeviceRenameTitle")}</DialogTitle>
+				</DialogHeader>
+				<Input value={name} onChange={(event) => setName(event.target.value)} maxLength={60} autoFocus onKeyDown={(event) => { if (event.key === "Enter" && trimmed && !busy) void runSave(); }} />
+				<DialogFooter>
+					<Button type="button" variant="outline" size="sm" onClick={props.onCancel}>{t("common.cancel")}</Button>
+					<Button type="button" size="sm" disabled={!trimmed || busy || trimmed === props.current} onClick={() => void runSave()}>{t("common.save")}</Button>
+				</DialogFooter>
+			</DialogContent>
+		</Dialog>
 	);
 }

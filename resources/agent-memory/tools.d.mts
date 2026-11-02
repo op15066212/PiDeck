@@ -10,3 +10,5 @@ export function addMemory(
 	root: string,
 	input: { target?: string; content: string; category?: string; projectId?: string },
 ): AddMemoryResult;
+
+export function syncTarget(root: string, target: string, projectId: string, options?: { force?: boolean }): { target: string; scope: string; projectId: string; entries: string[] };

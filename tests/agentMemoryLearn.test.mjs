@@ -17,6 +17,7 @@ import { loadTsCommonJs } from "./helpers/loadTsCommonJs.mjs";
 
 const { runLearnerPass } = loadTsCommonJs("src/main/agentMemory/agentMemoryLearner.ts");
 const { AUTO_LEARN_MIN_NEW_TURNS, readLearnState } = loadTsCommonJs("src/main/agentMemory/autoLearn.ts");
+const learnStateModule = loadTsCommonJs("src/main/agentMemory/autoLearn.ts");
 const db = await import("../resources/agent-memory/db.mjs");
 
 /** 造一个带 n 轮用户回合的会话，直接写进索引（不经过文件解析，测试只关心学习逻辑）。 */
@@ -171,4 +172,26 @@ test("未指定会话时直接跳过", async () => {
 	const outcome = await runLearnerPass(deps, {});
 	assert.equal(outcome.skipped, "no-session");
 	assert.equal(calls.length, 0);
+});
+
+test("状态区可见性：readAgentMemoryStatus 汇总学习水位", () => {
+	const { writeLearnState } = learnStateModule;
+	const { readAgentMemoryStatus } = loadTsCommonJs("src/main/agentMemory/agentMemoryStatus.ts");
+	const root = mkdtempSync(join(tmpdir(), "pideck-learn-status-"));
+
+	const empty = readAgentMemoryStatus(root);
+	// loadTsCommonJs 的对象来自另一个 vm realm，原型不同，deepEqual 会误判——逐字段断言。
+	assert.equal(empty.learn.sessions, 0, "没学过时摘要为空");
+	assert.equal(empty.learn.lastAt, null);
+
+	writeLearnState(root, {
+		version: 1,
+		sessions: {
+			a: { learnedTurns: 12, learnedAt: "2026-01-01T08:00:00.000Z" },
+			b: { learnedTurns: 24, learnedAt: "2026-01-02T09:00:00.000Z" },
+		},
+	});
+	const summary = readAgentMemoryStatus(root).learn;
+	assert.equal(summary.sessions, 2);
+	assert.equal(summary.lastAt, "2026-01-02T09:00:00.000Z", "取最近的 learnedAt");
 });

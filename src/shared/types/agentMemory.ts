@@ -26,6 +26,8 @@ export interface AgentMemoryStatus {
 	indexError: string | null;
 	/** 本机设备档案：导出包用它标注来源。 */
 	device: { id: string; name: string };
+	/** 自动学习循环的可见性摘要（设置页「上次学习」行）。 */
+	learn: { sessions: number; lastAt: string | null };
 }
 
 /** 条目所在作用域：全局四份文件 / `projects/<键>/` / `devices/<键>/`。 */

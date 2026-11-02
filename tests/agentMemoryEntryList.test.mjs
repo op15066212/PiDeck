@@ -15,6 +15,7 @@ import { join } from "node:path";
 
 import { addMemory } from "../resources/agent-memory/tools.mjs";
 import { projectKeyFromPath } from "../resources/agent-memory/paths.mjs";
+import { searchEntries } from "../resources/agent-memory/db.mjs";
 import { loadTsCommonJs } from "./helpers/loadTsCommonJs.mjs";
 
 const entries = loadTsCommonJs("src/main/agentMemory/agentMemoryEntries.ts");
@@ -94,4 +95,41 @@ test("缺 key 或 target 非法时明确报错（IPC 层据此回安全错误码
 	const { root } = seed();
 	assert.throws(() => entries.deleteAgentMemoryEntry(root, { target: "memory", key: "  " }), /entry-key-required/);
 	assert.throws(() => entries.deleteAgentMemoryEntry(root, { target: "nope", key: "x" }), /target-invalid/);
+});
+
+test("STANDING：读缺失文件为空串，保存整文件替换并同步索引", () => {
+	const root = makeRoot();
+	assert.equal(entries.readStandingEntry(root), "", "没有 STANDING.md 时读出来是空串");
+
+	entries.writeStandingEntry(root, "回答保持简洁\r\n发布前先列步骤");
+	assert.equal(entries.readStandingEntry(root), "回答保持简洁\n发布前先列步骤", "CRLF 归一成 LF，尾部补换行");
+
+	// 写路径强制穿透了 mtime 短路：检索索引里要能立刻搜到新内容（走 db 的 LIKE 通道）。
+	const hits = searchEntries(root, "发布前先列步骤", { limit: 5 });
+	assert.ok(hits.hits.some((hit) => hit.target === "standing"), "保存后索引应包含新常驻指令");
+});
+
+test("STANDING：超预算拒绝保存，空串清空文件", () => {
+	const root = makeRoot();
+	entries.writeStandingEntry(root, "先写一条");
+	assert.throws(() => entries.writeStandingEntry(root, "长".repeat(4001)), /standing-too-long/);
+	assert.equal(entries.readStandingEntry(root), "先写一条", "被拒的保存不能动原文件");
+
+	entries.writeStandingEntry(root, "");
+	assert.equal(entries.readStandingEntry(root), "");
+});
+
+test("设备档案：改名只动 name，id 保持稳定", () => {
+	const { renameDevice, readDeviceProfile } = loadTsCommonJs("resources/agent-memory/sync.mjs");
+	const root = makeRoot();
+
+	const before = readDeviceProfile(root);
+	const renamed = renameDevice(root, "工作笔记本");
+	assert.equal(renamed.id, before.id, "改名不能换 id，否则设备记忆全部失联");
+	assert.equal(renamed.name, "工作笔记本");
+	assert.equal(readDeviceProfile(root).name, "工作笔记本");
+
+	// 空名拒绝（UI 侧已禁用保存，这里守数据层最后一线）；再次读档不丢配置。
+	assert.throws(() => renameDevice(root, "   "), /device-name-required/);
+	assert.equal(readDeviceProfile(root).name, "工作笔记本");
 });

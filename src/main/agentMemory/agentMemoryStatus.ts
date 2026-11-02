@@ -15,6 +15,7 @@ import { FILE_BUDGETS, TARGET_FILES } from "../../../resources/agent-memory/path
 import { parseEntries } from "../../../resources/agent-memory/format.mjs";
 import { readRaw } from "../../../resources/agent-memory/files.mjs";
 import { readDeviceProfile } from "../../../resources/agent-memory/sync.mjs";
+import { readLearnState } from "./autoLearn";
 
 export interface AgentMemoryFileStat {
 	/** 相对根目录的位置；项目作用域形如 `projects/<key>/MEMORY.md`。 */
@@ -36,6 +37,8 @@ export interface AgentMemoryStatus {
 	index: { entries: number; sessions: number; messages: number } | null;
 	/** 索引不可用时的原因码（`node:sqlite` 缺失、库损坏等），供 UI 提示降级。 */
 	indexError: string | null;
+	/** 自动学习循环的可见性摘要：学过的会话数与最近一次学习时间（没学过为 null）。 */
+	learn: { sessions: number; lastAt: string | null };
 }
 
 /**
@@ -76,6 +79,8 @@ function collectFiles(root: string): AgentMemoryFileStat[] {
 export function readAgentMemoryStatus(root: string): AgentMemoryStatus {
 	const files = collectFiles(root);
 	const stats = indexStats(root);
+	const learnSessions = Object.values(readLearnState(root).sessions);
+	const learnLastAt = learnSessions.map((session) => session.learnedAt).filter(Boolean).sort().at(-1) ?? null;
 	const dbPath = join(root, "agent-memory.db");
 	return {
 		root,
@@ -85,6 +90,7 @@ export function readAgentMemoryStatus(root: string): AgentMemoryStatus {
 		device: readDeviceProfile(root),
 		index: stats.ok ? { entries: stats.entries, sessions: stats.sessions, messages: stats.messages } : null,
 		indexError: stats.ok ? null : (stats.reason ?? "index-unavailable"),
+		learn: { sessions: learnSessions.length, lastAt: learnLastAt },
 	};
 }
 

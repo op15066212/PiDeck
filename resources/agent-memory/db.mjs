@@ -168,6 +168,30 @@ export function syncEntries(root, { target, scope, projectId = "", entries, cate
 }
 
 /** LIKE 兜底时的转义：用户输入里的 `%`/`_` 不能当通配符。 */
+/**
+ * 源文件同步状态：每次工具调用都全量「读 Markdown → DELETE → 重插」太浪费，
+ * 记下各文件已同步时的 size+mtime，都没变就直接跳过（与 session_files 的增量索引同一思路）。
+ * 状态存在 meta 表里：索引被清空/重建后状态随之消失，下次自然全量重建，无需额外失效逻辑。
+ */
+const SYNC_STATE_PREFIX = "sync:";
+
+/** 读同步状态；没同步过或索引不可用都返回 undefined（调用方会走全量同步）。 */
+export function syncStateOf(root, filePath) {
+	const handle = openDatabase(root);
+	if (!handle.db) return undefined;
+	const row = handle.db.prepare("SELECT value FROM meta WHERE key = ?").get(SYNC_STATE_PREFIX + filePath);
+	return row ? String(row.value) : undefined;
+}
+
+/** 记录/更新同步状态。stat 传 null 表示「源文件不存在」也缓存，避免每查一次都重扫空缺。 */
+export function recordSyncState(root, filePath, stat) {
+	const handle = openDatabase(root);
+	if (!handle.db) return;
+	handle.db
+		.prepare("INSERT INTO meta(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
+		.run(SYNC_STATE_PREFIX + filePath, stat ? `${stat.size}:${stat.mtimeMs}` : "missing");
+}
+
 function escapeLike(value) {
 	return value.replace(/[\\%_]/g, (character) => `\\${character}`);
 }
@@ -321,6 +345,9 @@ export function searchMessages(root, query, { limit = 10, project } = {}) {
 	};
 
 	const selectJoin = `SELECT m.rowid AS rowId, m.msg_id AS id, m.session_id AS sessionId, m.role, m.content, m.ts, s.project, s.cwd, s.backend FROM messages m JOIN sessions s ON s.id = m.session_id`;
+	// 项目过滤下推到 SQL：取 `limit*4` 再在内存里扔的话，命中集中在其它项目时结果会莫名少于 limit。
+	const projectClause = project ? " AND s.project = ?" : "";
+	const projectArgs = project ? [project] : [];
 
 	const ftsQuery = sanitizeFtsQuery(query);
 	if (ftsQuery && !hasCjk(query)) {
@@ -329,9 +356,9 @@ export function searchMessages(root, query, { limit = 10, project } = {}) {
 				.prepare(
 					`SELECT m.rowid AS rowId, m.msg_id AS id, m.session_id AS sessionId, m.role, m.content, m.ts, s.project, s.backend FROM messages_fts
 					 JOIN messages m ON m.rowid = messages_fts.rowid JOIN sessions s ON s.id = m.session_id
-					 WHERE messages_fts MATCH ? ORDER BY bm25(messages_fts) ASC LIMIT ?`,
+					 WHERE messages_fts MATCH ?${projectClause} ORDER BY bm25(messages_fts) ASC LIMIT ?`,
 				)
-				.all(ftsQuery, limit * 4);
+				.all(...(project ? [ftsQuery, project, limit * 4] : [ftsQuery, limit * 4]));
 			for (const row of rows) push(row, Number(row.score ?? 0));
 		} catch {
 			// 退到 LIKE。
@@ -339,7 +366,7 @@ export function searchMessages(root, query, { limit = 10, project } = {}) {
 	}
 
 	try {
-		const rows = db.prepare(`${selectJoin} WHERE m.content LIKE ? ESCAPE '\\' ORDER BY LENGTH(m.content) ASC LIMIT ?`).all(`%${escapeLike(query.trim())}%`, limit * 4);
+		const rows = db.prepare(`${selectJoin} WHERE m.content LIKE ? ESCAPE '\\'${projectClause} ORDER BY LENGTH(m.content) ASC LIMIT ?`).all(...(project ? [`%${escapeLike(query.trim())}%`, project, limit * 4] : [`%${escapeLike(query.trim())}%`, limit * 4]));
 		for (const row of rows) push(row, 1);
 	} catch {
 		// 同上。

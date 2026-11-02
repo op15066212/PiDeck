@@ -83,9 +83,11 @@ export interface BundlePreview {
 }
 
 export function readDeviceProfile(root: string): BundleDevice;
+export function renameDevice(root: string, name: string): BundleDevice;
 export function deviceScopeId(root: string): string;
 export function readTombstones(root: string): BundleTombstone[];
 export function addTombstone(root: string, input: { target: string; scope: string; projectKey?: string; content: string; at?: string }): void;
+export function removeTombstone(root: string, input: { target: string; scope: string; projectKey?: string; content: string }): void;
 export function listSharedScopes(root: string): { target: string; scope: string; projectId: string }[];
 export function buildExportBundle(root: string, options?: { exportedAt?: string; selection?: string[] | null }): MemoryBundle;
 export function serializeBundle(bundle: MemoryBundle): string;

@@ -7,6 +7,7 @@
  *    业务错误走 isError 而不是把进程弄崩。
  */
 import assert from "node:assert/strict";
+import { zstdCompressSync } from "node:zlib";
 import test from "node:test";
 import { spawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
@@ -167,6 +168,67 @@ test("会话检索：索引 pi JSONL 与 ACP 归档，指纹未变时跳过重�
 	assert.equal(changed.indexing.indexed, 1);
 	assert.equal(changed.hits.length, 3, "重灌后不出现重复行：仍只有新追加的那条多出来");
 	assert.deepEqual(new Set(changed.hits.map((hit) => hit.sessionId)), new Set(["s1"]));
+});
+
+test("会话检索：DSH 事件日志入索引（zstd 帧、generation 择优、根会话过滤）", () => {
+	const root = freshRoot();
+	const dshDir = join(root, "fixtures", "dsh");
+	const NL = String.fromCharCode(10);
+	// workspaceDir/<sessionId>/session.v1.jsonl.zstd：header 与消息分帧压缩（一次追加一帧）
+	const sid = "session-11111111-2222-3333-4444-555555555555";
+	const sessionDir = join(dshDir, "--D-proj-dsh--", sid);
+	mkdirSync(sessionDir, { recursive: true });
+	const line = (value) => zstdCompressSync(Buffer.from(`${JSON.stringify(value)}${NL}`));
+	writeFileSync(
+		join(sessionDir, "session.v1.jsonl.zstd"),
+		Buffer.concat([
+			line({ type: "session", id: sid, cwd: "D:/proj-dsh" }),
+			// 注入上下文（AGENTS.md 等）：source.kind 不是 user，跳过
+			line({ type: "user/message", seq: 1, time: 1767225600000, data: { content: [{ type: "text", text: "AGENTS 指令注入不应入库" }], source: { kind: "agent-instructions" } } }),
+			line({ type: "user/message", seq: 2, time: 1767225601000, data: { content: [{ type: "text", text: "DSH 侧说要把发布脚本改成幂等" }], source: { kind: "user" } } }),
+			// 流式增量与终态重复：只认终态
+			line({ type: "assistant/chunk", seq: 3, data: { chunk: { type: "text-delta", text: "已改成幂等（增量不该入库）" } } }),
+			line({ type: "assistant/message", seq: 4, time: 1767225602000, data: { message: { content: [{ type: "text", text: "DSH 已改成幂等" }] } } }),
+		]),
+	);
+
+	// 同目录遗留 v0 明文代 + 派生会话（parentSession）：都不采
+	const legacyDir = join(dshDir, "--D-proj-dsh--", "session-99999999-2222-3333-4444-555555555555");
+	mkdirSync(legacyDir, { recursive: true });
+	writeFileSync(
+		join(legacyDir, "session.jsonl"),
+		[
+			JSON.stringify({ type: "session", id: "session-99999999-2222-3333-4444-555555555555", cwd: "D:/proj-dsh", parentSession: sid }),
+			JSON.stringify({ type: "user/message", seq: 1, time: 1767225600000, data: { content: [{ type: "text", text: "派生会话正文" }] } }),
+		].join(`${NL}`),
+		"utf8",
+	);
+	const bothDir = join(dshDir, "--D-proj-dsh--", "session-88888888-2222-3333-4444-555555555555");
+	mkdirSync(bothDir, { recursive: true });
+	writeFileSync(join(bothDir, "session.jsonl"), `${JSON.stringify({ type: "session", id: "session-88888888-2222-3333-4444-555555555555", cwd: "D:/proj-dsh" })}${NL}${JSON.stringify({ type: "user/message", seq: 1, time: 1767225600000, data: { content: [{ type: "text", text: "旧代正文不应入库" }] } })}${NL}`, "utf8");
+	writeFileSync(join(bothDir, "session.v2.jsonl"), `${JSON.stringify({ type: "session", id: "session-88888888-2222-3333-4444-555555555555", cwd: "D:/proj-dsh" })}${NL}${JSON.stringify({ type: "user/message", seq: 1, time: 1767225600000, data: { content: [{ type: "text", text: "新代才是权威" }] } })}${NL}`, "utf8");
+
+	const sources = [{ backend: "dsh", dir: dshDir, project: "" }];
+	const hits = searchSessions(root, { query: "幂等", sources });
+	assert.equal(hits.ok, true);
+	assert.equal(hits.indexing.indexed, 2, "v1 压缩代 + v2 新代入索引；派生会话记 skipped");
+	assert.equal(hits.indexing.skipped, 1);
+	const dshHits = hits.hits.filter((hit) => hit.backend === "dsh");
+	assert.equal(dshHits.length, 2, "user 与 assistant 终态各一条");
+	assert.equal(dshHits[0].project, projectKeyFromPath("D:/proj-dsh"));
+	// 注入上下文与流式增量都不入库
+	assert.equal(searchSessions(root, { query: "AGENTS 指令注入", sources }).hits.length, 0);
+	assert.equal(searchSessions(root, { query: "增量不该入库", sources }).hits.length, 0);
+	// 派生会话与旧代不采
+	assert.equal(searchSessions(root, { query: "派生会话正文", sources }).hits.length, 0);
+	assert.equal(searchSessions(root, { query: "旧代正文", sources }).hits.length, 0);
+	assert.equal(searchSessions(root, { query: "新代才是权威", sources }).hits.length, 1);
+
+	// 追加一帧后指纹变化 → 整份重灌，消息 id 用 seq 去重不翻倍
+	writeFileSync(join(sessionDir, "session.v1.jsonl.zstd"), Buffer.concat([readFileSync(join(sessionDir, "session.v1.jsonl.zstd")), line({ type: "user/message", seq: 5, time: 1767225603000, data: { content: [{ type: "text", text: "再加个幂等校验" }], source: { kind: "user" } } })]));
+	const again = searchSessions(root, { query: "幂等", sources });
+	assert.equal(again.indexing.indexed, 1);
+	assert.equal(again.hits.filter((hit) => hit.backend === "dsh").length, 3);
 });
 
 test("会话检索：fork 会话与父会话共享消息 id 时都要入索引（回归：全局主键撞键导致整份回滚）", () => {

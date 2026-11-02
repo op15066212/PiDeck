@@ -27,7 +27,7 @@ export const AGENT_MEMORY_ENV = {
 } as const;
 
 /** 一条会话来源：只有 pi 的 JSONL 目录与 ACP 的归档目录能被索引。 */
-export type AgentMemorySource = { backend: "pi" | "acp"; dir: string; project: string };
+export type AgentMemorySource = { backend: "pi" | "acp" | "dsh"; dir: string; project: string };
 
 export type AgentMemoryMount = { command: string; args: string[]; env: Record<string, string> };
 
@@ -45,11 +45,12 @@ export function resolveAgentMemoryServerPath(input: { isPackaged: boolean; appPa
 }
 
 /** 空目录不挂：挂上去只会让 session_search 白跑一趟扫描。 */
-export function buildAgentMemorySources(input: { piSessionsDir?: string; acpSessionsDir?: string; project?: string }): AgentMemorySource[] {
+export function buildAgentMemorySources(input: { piSessionsDir?: string; acpSessionsDir?: string; dshSessionsDir?: string; project?: string }): AgentMemorySource[] {
 	const project = input.project ?? "";
 	const sources: AgentMemorySource[] = [];
 	if (input.piSessionsDir) sources.push({ backend: "pi", dir: input.piSessionsDir, project });
 	if (input.acpSessionsDir) sources.push({ backend: "acp", dir: input.acpSessionsDir, project });
+	if (input.dshSessionsDir) sources.push({ backend: "dsh", dir: input.dshSessionsDir, project });
 	return sources;
 }
 
@@ -111,8 +112,9 @@ export function buildAcpMcpServers(mount: AgentMemoryMount): AcpMcpServer[] {
 /**
  * 主进程侧的挂载装配：把所有路径派生集中在一处，调用方（index.ts）不需要知道目录布局。
  *
- * 来源只收两个真实存在的目录：pi 的 JSONL 会话根与 deck 自己的 ACP 归档。
- * DSH 的会话文件目前不索引（它在 SQLite 里、自有 session_query 工具），见 docs/agent-memory.md。
+ * 来源只收真实存在的目录：pi 的 JSONL 会话根、deck 自己的 ACP 归档、DSH 的 sessions 根。
+ * DSH 只采根会话的 user/message + assistant 终态（解析器在 resources/agent-memory/sessions.mjs），
+ * 不影响它自己的 session_query；目录不存在时服务器扫描自然返回空。
  */
 export function buildAgentMemoryMountForApp(input: {
 	userData: string;
@@ -123,6 +125,8 @@ export function buildAgentMemoryMountForApp(input: {
 	resourcesPath: string;
 	/** 会话工作目录（ACP 握手时才有）；缺省不挂项目键。 */
 	cwd?: string;
+	/** DSH 的 sessions 根（`<dshHome>/sessions`）；未用 DSH 时不传。 */
+	dshSessionsDir?: string;
 }): AgentMemoryMount {
 	return buildAgentMemoryMount({
 		execPath: input.execPath,
@@ -131,6 +135,7 @@ export function buildAgentMemoryMountForApp(input: {
 		sources: buildAgentMemorySources({
 			piSessionsDir: join(input.home, ".pi", "agent", "sessions"),
 			acpSessionsDir: join(input.userData, "acp-sessions"),
+			dshSessionsDir: input.dshSessionsDir,
 		}),
 		cwd: input.cwd,
 	});
