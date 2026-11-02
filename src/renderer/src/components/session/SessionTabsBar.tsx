@@ -9,6 +9,7 @@ import { motion, useReducedMotion } from "motion/react";
 import { AnimatedBadge } from "../motion/animated-badge";
 import { EASE_OUT } from "../../lib/ease";
 import { resolveTabLayoutGeneration } from "../../utils/sessionTabMotion";
+import { handleRadioGroupKeys, radioGroupTabIndex } from "../../utils/radioGroupKeys";
 import { sessionStatusBadge } from "../../utils/sessionStatusBadge";
 import { canRunSessionAction, type SessionReloadMode, type SessionRunAction, type SessionRunCapabilities, type SessionRunControlView } from "../../utils/sessionCommands";
 import { sessionDisplayName } from "../../utils/sessionDisplayName";
@@ -253,6 +254,11 @@ export function SessionTabsBar(props: SessionTabsBarProps) {
 	// 分屏组管理菜单（右键胶囊打开）：重命名草稿
 	const [splitGroupMenuOpen, setSplitGroupMenuOpen] = useState(false);
 	const [splitGroupNameDraft, setSplitGroupNameDraft] = useState("");
+	// 色板是 role="radiogroup"：整组一个 Tab 停靠点，方向键换项（null=尚未用键盘进入，停靠在已选中项）
+	const [colorFocusIndex, setColorFocusIndex] = useState<number | null>(null);
+	const colorSwatchRefs = useRef<(HTMLButtonElement | null)[]>([]);
+	// 菜单关闭后把焦点还给胶囊：Popover 没有 Trigger，Radix 无处可还，焦点会掉到 body
+	const splitGroupCapsuleRef = useRef<HTMLButtonElement | null>(null);
 
 	// —— 按项目分组 + 分屏组折叠（始终生效，不再受开关控制）——
 	// 分组排序是会话 Tab 的固有行为：新会话归入其所属项目组的尾部（按 tabs 原序归组，天然保证
@@ -586,6 +592,11 @@ export function SessionTabsBar(props: SessionTabsBarProps) {
 							const groupHasFocus = currentSessionId != null && splitSet.has(currentSessionId);
 							const groupName = props.splitGroupName?.trim() || t("session.splitGroup.label");
 							const groupColor = props.splitGroupColor || SPLIT_GROUP_COLOR_PALETTE[0].value;
+							// 色板停靠点：未用键盘进入时落在已选中项（色值来自旧版本色板时无匹配，退回首项）
+							const checkedColorIndex = Math.max(
+								0,
+								SPLIT_GROUP_COLOR_PALETTE.findIndex((c) => c.value === groupColor),
+							);
 							// role="group" 挂在外层容器（容纳胶囊 + 组内 Tab），按钮保持原生 button 语义；
 							// aria-expanded/aria-controls 挂在按钮上；右键打开组管理菜单（Popover），
 							// 左键点击仍是展开/收起（与浏览器标签组一致）
@@ -594,6 +605,7 @@ export function SessionTabsBar(props: SessionTabsBarProps) {
 									<PopoverAnchor asChild>
 										<div role="group" aria-label={groupName} className="flex min-w-0 items-center gap-1">
 											<GroupCapsuleButton
+												ref={splitGroupCapsuleRef}
 												color={groupColor}
 												name={groupName}
 												count={sessionIds.length}
@@ -617,7 +629,18 @@ export function SessionTabsBar(props: SessionTabsBarProps) {
 										</div>
 									</PopoverAnchor>
 									{/* 组管理菜单：重命名 + 颜色选择 + 取消分屏（其余按钮不要） */}
-									<PopoverContent align="start" sideOffset={6} className="w-64 p-3">
+									<PopoverContent
+										align="start"
+										sideOffset={6}
+										className="w-64 p-3"
+										onCloseAutoFocus={(event) => {
+											// 没有 PopoverTrigger，Radix 无处可还焦点 → 键盘关闭（Esc / 回车取消分屏）后
+											// 焦点会掉到 body，后续 Tab 从文档头开始。焦点已落到别处（鼠标点外部）时不抢。
+											if (document.activeElement !== document.body) return;
+											event.preventDefault();
+											splitGroupCapsuleRef.current?.focus();
+										}}
+									>
 										<div className="flex flex-col gap-3">
 											<input
 												type="text"
@@ -639,16 +662,42 @@ export function SessionTabsBar(props: SessionTabsBarProps) {
 												}}
 												className="h-8 w-full rounded-md border border-border-strong bg-background px-2 text-caption text-foreground outline-none placeholder:text-muted-foreground/60 focus:border-accent focus:ring-1 focus:ring-accent/40"
 											/>
-											{/* 颜色选择排（浏览器标签组同款：预设色板） */}
-											<div className="flex items-center gap-2" role="radiogroup" aria-label={t("session.splitGroup.color")}>
-												{SPLIT_GROUP_COLOR_PALETTE.map((c) => (
+											{/* 颜色选择排（浏览器标签组同款：预设色板）。role="radio" 的方向键与 Tab 停靠点
+											    必须自己实现（原生 input[type=radio] 才有浏览器行为）：整组一个停靠点，
+											    左右/上下环绕换项并立即选中，Home/End 到首尾。 */}
+											<div
+												className="flex items-center gap-2"
+												role="radiogroup"
+												aria-label={t("session.splitGroup.color")}
+												onBlur={(event) => {
+													// 焦点离开整组后重置停靠点：下次 Tab 进入落在已选中项（ARIA 推荐行为）
+													if (!event.currentTarget.contains(event.relatedTarget)) setColorFocusIndex(null);
+												}}
+											>
+												{SPLIT_GROUP_COLOR_PALETTE.map((c, index) => (
 													<button
 														key={c.name}
+														ref={(element) => {
+															colorSwatchRefs.current[index] = element;
+														}}
 														type="button"
 														role="radio"
 														aria-checked={groupColor === c.value}
 														aria-label={t(c.labelKey)}
 														title={t(c.labelKey)}
+														tabIndex={radioGroupTabIndex(index, colorFocusIndex, checkedColorIndex)}
+														onFocus={() => setColorFocusIndex(index)}
+														onKeyDown={(event) => {
+															handleRadioGroupKeys(event, {
+																index,
+																count: SPLIT_GROUP_COLOR_PALETTE.length,
+																onMove: (target) => {
+																	setColorFocusIndex(target);
+																	colorSwatchRefs.current[target]?.focus();
+																	props.onSplitGroupColorChange?.(SPLIT_GROUP_COLOR_PALETTE[target].value);
+																},
+															});
+														}}
 														onClick={() => props.onSplitGroupColorChange?.(c.value)}
 														className={cn("size-5 rounded-full transition-transform hover:scale-110", groupColor === c.value && "ring-2 ring-offset-2 ring-offset-popover")}
 														style={{
@@ -937,10 +986,13 @@ function GroupCapsuleButton(props: {
 	/** 可选：分屏组场景下由 App 层传入；为空则按钮不可切换（无操作） */
 	onToggle?: () => void;
 	onContextMenu?: (event: React.MouseEvent) => void;
+	/** React 19：ref 作为普通 prop 透传，供组管理菜单关闭后把焦点还给胶囊 */
+	ref?: React.Ref<HTMLButtonElement>;
 }) {
 	const { color, name, count, expanded, focused } = props;
 	return (
 		<button
+			ref={props.ref}
 			type="button"
 			aria-expanded={expanded}
 			aria-controls={props.ariaControls}
