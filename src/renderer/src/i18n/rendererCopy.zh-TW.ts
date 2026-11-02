@@ -2,7 +2,7 @@
  * 本文件由 `node scripts/genZhTwCopy.mjs` 生成，请勿手改。
  * 文案改动请修改对应的 zh-CN 源文件后重新生成；转换规则见该脚本的 OVERRIDES。
  * 注释刻意保留简体：属于开发者视角文本，不面向用户。
- * source-sha256: 94563cae58f4e40f2a1168ecc9c75408cf3c775ad27bd91f06b4436ec364a0dd（来自 src/renderer/src/i18n/rendererCopy.zh-CN.ts 的词典区块指纹，由 tests/zhTwCopy.test.mjs 校验新鲜度）
+ * source-sha256: e030161f481ebd88dce09cf14b3fbc1fcc45d8c760e7fbd4a4ee84fc2ceb65da（来自 src/renderer/src/i18n/rendererCopy.zh-CN.ts 的词典区块指纹，由 tests/zhTwCopy.test.mjs 校验新鲜度）
  */
 import { mainProcessZhTW } from "../../../shared/i18n/mainProcessCopy.zh-TW";
 import type { TranslationKey } from "./rendererCopy.zh-CN";
@@ -264,6 +264,16 @@ export const zhTW: Record<TranslationKey, string> = {
 	"app.projectRefreshed": "專案已重新整理",
 	"app.projectsRefreshed": "已重新整理 {count} 個專案",
 	"app.projectsRefreshFailed": "重新整理專案列表失敗：{error}",
+	"app.projectsBatchRemove": "批次刪除專案記錄",
+	"app.projectsBatchRemoveTitle": "批次刪除專案記錄",
+	"app.projectsBatchRemoveDesc": "只刪除 PiDeck 中的專案記錄，不會刪除磁碟上的目錄。所選專案下的會話索引與 worktree 子工作區記錄會一併移除。",
+	"app.projectsBatchRemoveSelectAll": "全選（共 {count} 項）",
+	"app.projectsBatchRemoveSelected": "已選 {selected} / {total}",
+	"app.projectsBatchRemoveConfirm": "移除 {count} 個",
+	"app.projectsBatchRemoveEmpty": "沒有可移除的專案記錄",
+	"app.projectsBatchRemoving": "正在移除 {done}/{total}…",
+	"app.projectsRemoved": "已移除 {count} 個專案記錄",
+	"app.projectsRemovePartial": "已移除 {removed} 個，{failed} 個未移除（仍有執行中的 Agent 或刪除失敗）",
 	"app.projectDirectoryMissing": "專案目錄不存在，已重新整理專案列表。請恢復目錄，或在專案選單中移除該專案。",
 	"app.files": "檔案",
 	"app.model": "模型",
@@ -6560,7 +6570,6 @@ export const zhTW: Record<TranslationKey, string> = {
 	"web.fileViewerTruncated": "檔案較大，已截斷展示前 512KB；完整內容請在桌面端開啟",
 	"web.fileViewerBinary": "二進位制檔案，不支援預覽",
 	"web.previewClose": "關閉",
-	"web.previewOutsideProject": "路徑在專案外或不可讀，Web 端僅支援預覽專案內檔案",
 	"web.previewLoadFailed": "檔案讀取失敗",
 	"web.diffNotFound": "未找到該檔案的 Git 變更（可能已被提交）",
 	"web.diffFallbackToFile": "該檔案已無未提交改動（可能已提交）或內容超限，已回退展示當前檔案內容",

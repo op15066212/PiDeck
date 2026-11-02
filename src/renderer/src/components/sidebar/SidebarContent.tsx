@@ -17,6 +17,7 @@ import { sessionDisplayName } from "../../utils/sessionDisplayName";
 import { DshSearchResults } from "./DshSearchResults";
 import { SessionContentSearchResults } from "./SessionContentSearchResults";
 import { ProjectTree } from "./ProjectTree";
+import type { BatchProjectRemovalOutcome } from "./BatchRemoveProjectsDialog";
 import { Button } from "../ui-shadcn/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../ui-shadcn/tooltip";
 import { Tabs, TabsList, TabsTrigger } from "../motion/tabs";
@@ -61,6 +62,8 @@ export type SidebarActions = {
 		/** 重命名项目显示名（仅改 label，不动磁盘目录）；打开重命名对话框。 */
 		rename: (project: Project) => void;
 		remove: (project: Project) => Promise<void>;
+		/** 批量移除项目记录：逐个 IPC，单个失败不影响后续；返回成功/失败数量供弹窗汇总。 */
+		removeMany: (projectIds: readonly string[], onProgress?: (done: number, total: number) => void) => Promise<BatchProjectRemovalOutcome>;
 		changeChatPath?: (project: Project) => Promise<void>;
 	};
 	sessions: {

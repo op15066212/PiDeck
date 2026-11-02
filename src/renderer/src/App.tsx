@@ -69,6 +69,7 @@ import {
 	toggleRpcLoggingAgent,
 } from "./atoms";
 import { type SidebarActions } from "./components/sidebar/SidebarContent";
+import { removeProjectsSequentially, type BatchProjectRemovalOutcome } from "./utils/batchProjectRemoval";
 import { AppSidebar } from "./components/sidebar/AppSidebar";
 import { AppBootstrap } from "./components/app/AppBootstrap";
 import { SettingsFeatureRoot } from "./components/app/SettingsFeatureRoot";
@@ -2225,6 +2226,32 @@ export function App() {
 	}
 
 	/**
+	 * 批量移除项目记录：逐个调用既有 projects.remove IPC（主进程已按项目做 standby 释放、
+	 * 运行中 Agent 拦截与会话索引清理）。失败容错、进度回调与计数在 removeProjectsSequentially，
+	 * 这里只负责接线：每个成功项同步本地侧栏与选中态（见 updateAfterProjectRemoved），
+	 * 全部结束后用最后一次清单刷新；只删记录、不动磁盘目录，已成功的项目不回滚。
+	 */
+	async function removeSidebarProjects(projectIds: readonly string[], onProgress?: (done: number, total: number) => void): Promise<BatchProjectRemovalOutcome> {
+		// 逐项返回的清单按顺序收集：最后一次成功的结果就是当前完整清单（主进程每次重算可见项目）。
+		const remainingLists: Project[][] = [];
+		const outcome = await removeProjectsSequentially(
+			projectIds,
+			async (projectId) => {
+				const next = await api.projects.remove(projectId);
+				remainingLists.push(next);
+				updateAfterProjectRemoved(projectId, next);
+			},
+			onProgress,
+		);
+		const latest = remainingLists[remainingLists.length - 1];
+		if (latest) setProjects(latest);
+		if (outcome.removed + outcome.failed > 0) {
+			showToast(outcome.failed > 0 ? t("app.projectsRemovePartial", { removed: outcome.removed, failed: outcome.failed }) : t("app.projectsRemoved", { count: outcome.removed }), outcome.failed > 0 ? 6000 : 2200);
+		}
+		return outcome;
+	}
+
+	/**
 	 * 修改内置对话区（Chat）的聊天记录保存目录：弹目录选择器 → 主进程写入
 	 * chat-path.json 并广播 projects:changed → 重新扫描该项目会话列表 → toast 提示。
 	 * 侧边栏菜单与聊天区头部按钮共用此实现，避免两处 IPC 调用逻辑漂移。
@@ -2313,6 +2340,7 @@ export function App() {
 				showToast(t("common.copied"));
 			},
 			remove: removeSidebarProject,
+			removeMany: removeSidebarProjects,
 			rename: rename.openProjectRename,
 			changeChatPath,
 		},
