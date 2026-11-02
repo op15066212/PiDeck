@@ -5348,7 +5348,6 @@ export const zhCN = {
 	"dataMode.mismatchDesc": "当前数据目录属于另一通道的数据模式，继续使用可能导致两个通道的数据互相混淆。",
 	"dataMode.mismatchContinue": "继续使用",
 	"dataMode.mismatchQuit": "退出",
-	"settings.updateSourceDevLocked": "开发版固定使用 GitHub 更新源（预发布通道）",
 	"settings.dataEnvSectionTitle": "数据环境",
 	"settings.dataEnvCurrentMode": "当前数据模式",
 	"settings.dataEnvSwitchButton": "切换数据模式",

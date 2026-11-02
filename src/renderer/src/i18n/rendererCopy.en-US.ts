@@ -5371,7 +5371,6 @@ export const enUS: Record<TranslationKey, string> = {
 	"dataMode.mismatchDesc": "The current data directory belongs to the other channel's data mode. Continuing may mix data between the two channels.",
 	"dataMode.mismatchContinue": "Continue Anyway",
 	"dataMode.mismatchQuit": "Quit",
-	"settings.updateSourceDevLocked": "Dev builds always use the GitHub update source (prerelease channel)",
 	"settings.dataEnvSectionTitle": "Data Environment",
 	"settings.dataEnvCurrentMode": "Current Data Mode",
 	"settings.dataEnvSwitchButton": "Switch Data Mode",

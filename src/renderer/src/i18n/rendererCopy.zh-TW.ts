@@ -2,7 +2,7 @@
  * 本文件由 `node scripts/genZhTwCopy.mjs` 生成，请勿手改。
  * 文案改动请修改对应的 zh-CN 源文件后重新生成；转换规则见该脚本的 OVERRIDES。
  * 注释刻意保留简体：属于开发者视角文本，不面向用户。
- * source-sha256: 94563cae58f4e40f2a1168ecc9c75408cf3c775ad27bd91f06b4436ec364a0dd（来自 src/renderer/src/i18n/rendererCopy.zh-CN.ts 的词典区块指纹，由 tests/zhTwCopy.test.mjs 校验新鲜度）
+ * source-sha256: f75edd7371bb4acfff8f726d8e315a91ad6e03ee8f5b129cd938354cdc9fc497（来自 src/renderer/src/i18n/rendererCopy.zh-CN.ts 的词典区块指纹，由 tests/zhTwCopy.test.mjs 校验新鲜度）
  */
 import { mainProcessZhTW } from "../../../shared/i18n/mainProcessCopy.zh-TW";
 import type { TranslationKey } from "./rendererCopy.zh-CN";
@@ -5355,7 +5355,6 @@ export const zhTW: Record<TranslationKey, string> = {
 	"dataMode.mismatchDesc": "當前資料目錄屬於另一通道的資料模式，繼續使用可能導致兩個通道的資料互相混淆。",
 	"dataMode.mismatchContinue": "繼續使用",
 	"dataMode.mismatchQuit": "退出",
-	"settings.updateSourceDevLocked": "開發版固定使用 GitHub 更新源（預釋出通道）",
 	"settings.dataEnvSectionTitle": "資料環境",
 	"settings.dataEnvCurrentMode": "當前資料模式",
 	"settings.dataEnvSwitchButton": "切換資料模式",
