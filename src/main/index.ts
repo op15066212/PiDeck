@@ -993,7 +993,8 @@ const foreignSyncDeps: DshForeignSyncDeps = {
 			dismissedPaths: projectStore.listDismissedPaths(),
 			pathExists: await defaultPathCheck(cwd),
 		}),
-	ensureProjectForCwd: (cwd) => projectStore.add(cwd),
+	// 全局 WSL 模式下按 WSL 环境登记：cwd 是发行版内路径时不能记成 Windows 项目。
+	ensureProjectForCwd: (cwd) => projectStore.add(cwd, undefined, settingsStore.get().wslEnabled ? "wsl" : "windows"),
 	ensureFallbackProject: () => projectStore.ensureExternalSessionsProject(mainCopy("project.externalSessions")),
 	createDraft: (input) => sessionCatalog.createDraft(input),
 	// 纠正归属时看现有标题是不是 cwd 兑底占位；有官方投影名时必须覆盖。
@@ -4816,7 +4817,7 @@ function registerIpc() {
 	installAtomgitNoCacheBypass(() => session.fromPartition(UPDATER_PARTITION_NAME, { cache: false }));
 	const updateServiceBase = {
 		settingsStore,
-		// 更新通道（dev/stable，启动时已判定）：dev 强制 GitHub 源 + allowPrerelease（见 UpdateService.applyUpdateSource）。
+		// 更新通道（dev/stable，启动时已判定）：dev 开启 allowPrerelease，更新源仍跟随设置（见 UpdateService.applyUpdateSource）。
 		channel: updateChannel,
 		checkPiUpdate: () => extensionManager.checkPiUpdate(),
 		// 模型目录：复用设置页同一检查链路（GitHub main 分支 manifest 比对），结果并入更新快照。
@@ -6367,7 +6368,7 @@ app
 			// 宿主版本号：/api/state 的 version 投影，Web 端侧栏底栏展示。
 			getAppVersion: () => app.getVersion(),
 			listProjects: () => projectStore.list().filter(isLocalProject),
-			createProject: (path) => projectStore.add(path),
+			createProject: (path) => projectStore.add(path, undefined, settingsStore.get().wslEnabled ? "wsl" : "windows"),
 			deleteProject: async (projectId) => {
 				if (!projectStore.get(projectId) || projectStore.get(projectId)?.kind === "chat") return false;
 				const childIds = projectStore.listWorktreeChildren(projectId).map((child) => child.id);
@@ -7430,10 +7431,45 @@ app
 				},
 			}),
 		});
+		/**
+		 * 全局 WSL 模式（设置 → 开发 → Pi 来源）。
+		 *
+		 * 连接档案（一等 WSL 目标）尚未放开，正式包仍靠这条全局开关工作：启动时把会话扫描、
+		 * Agent/DSH spawn、技能/提示词/扩展/配置目录一起切到发行版 HOME，关闭时切回 Windows。
+		 * 与 0.9.8 同语义：只在启动时同步，切换来源后由设置页的重检 + 重启生效。
+		 */
 		const syncWslConfig = async () => {
-			sessionScanner.clearWsl();
-			agentManager.configureWsl(null);
-			dshHost.configureWsl(null);
+			const { wslEnabled, wslDistro, wslUser } = settingsStore.get();
+			if (wslEnabled && wslDistro && wslUser) {
+				const { resolveWslEnvironment } = await import("./wsl/WslEnvironment");
+				const wslEnv = await resolveWslEnvironment(wslDistro, wslUser, {
+					warn: (msg: string, detail: unknown) => void appLogger?.warn("wsl", String(msg), { detail }),
+				});
+				await sessionScanner.configureWsl(wslEnv);
+				agentManager.configureWsl(wslEnv);
+				// DSH host 是 Windows 原生进程：WSL 项目的 workspace 路径与会话目录编码
+				// 都要按主机路径算，否则 workspace.resolve 失败、会话建不出来。
+				dshHost.configureWsl(wslEnv);
+				skillManager.configureWsl(wslEnv);
+				promptManager.configureWsl(wslEnv);
+				extensionManager.configureWsl(wslEnv);
+				// 配置/雪提示词管理器在装配后段才实例化：启动早期同步时可能还没有，跳过即可。
+				if (configManager) configManager.configureWsl(wslEnv);
+				if (xuePromptManager) xuePromptManager.configureWsl(wslEnv);
+				// 窗口已起来后再异步探测 WSL which，点会话时 resolveCommand 才能命中 wsl:// 缓存。
+				void piLocator.warmWslCommand(wslDistro, wslUser).catch((error: unknown) => {
+					void appLogger?.warn("app", "WSL pi which warmup failed", error);
+				});
+			} else {
+				sessionScanner.clearWsl();
+				agentManager.configureWsl(null);
+				dshHost.configureWsl(null);
+				skillManager.configureWsl(null);
+				promptManager.configureWsl(null);
+				extensionManager.configureWsl(null);
+				if (configManager) configManager.configureWsl(null);
+				if (xuePromptManager) xuePromptManager.configureWsl(null);
+			}
 		};
 		// 先注册 IPC 并创建窗口：WSL 探测 / pi settings / 代理 / Web 服务都可能卡住或抛错，
 		// 不能挡在 createWindow 前面（打包便携版表现为「启动没反应」，dev 因热路径较短不易复现）。

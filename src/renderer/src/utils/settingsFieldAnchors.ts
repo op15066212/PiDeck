@@ -94,6 +94,18 @@ const SETTINGS_ROW_ANCHORS = [
 	},
 	{
 		tab: "dev",
+		slug: "dev-pi-source",
+		labelKey: "settings.piSource.label",
+		keywords: ["pi 来源", "wsl", "windows 原生", "运行环境", "pi source"],
+	},
+	{
+		tab: "dev",
+		slug: "dev-wsl-config",
+		labelKey: "settings.wsl.distro",
+		keywords: ["wsl", "发行版", "distro", "子系统", "linux 用户", "wsl user"],
+	},
+	{
+		tab: "dev",
 		slug: "dev-pi-installations",
 		// 原「自定义 pi 路径」输入框已并入这块列表（检测到的安装 + 我添加的路径），
 		// 锚点必须跟着走：留在旧 id 上会让命令面板点进去静默无反应。

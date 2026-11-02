@@ -363,6 +363,7 @@ function SettingsModalContent(props: SettingsModalProps) {
 	// 左侧导航黄点来源：与关闭确认同一套字段目录，避免两处口径不一致
 	const dirtyTabIds = useMemo(() => dirtySettingsTabIds({ dirtyFields, visionDirty: visionDraft.dirty, imageGenDirty, videoGenDirty, acpDirty }), [dirtyFields, visionDraft.dirty, imageGenDirty, videoGenDirty, acpDirty]);
 	/** 各 tab 的局部编辑态（WSL 输入/Web 端口/宠物预览模式）在取消时通过递增信号重置 */
+	const [devTabResetKey, setDevTabResetKey] = useState(0);
 	const [webTabResetKey, setWebTabResetKey] = useState(0);
 	const [petTabResetKey, setPetTabResetKey] = useState(0);
 
@@ -370,6 +371,30 @@ function SettingsModalContent(props: SettingsModalProps) {
 	const updateDraft = useCallback((patch: Partial<AppSettings>) => {
 		setDraftSettings((prev) => ({ ...prev, ...patch }));
 	}, []);
+
+	/**
+	 * 把 WSL 相关字段的草稿差异先落盘（检测环境前必须调用）。
+	 * 主进程 piCheck 读的是持久化设置；用户刚在草稿里切了 WSL 来源/发行版/用户名还没点
+	 * 「保存」时，主进程会拿旧配置执行——wslEnabled=false 时 Linux 路径被当 Windows 文件
+	 * 启动必然 ENOENT，表现为「校验失败：无法运行 pi CLI」。
+	 * 只提交这几个字段并推进对应基准，其余草稿字段的脏标记保持原样。
+	 */
+	const commitWslDraftFields = useCallback(async (): Promise<boolean> => {
+		const wslKeys = ["wslEnabled", "wslDistro", "wslUser"] as const;
+		const patch: Partial<AppSettings> = {};
+		for (const key of wslKeys) {
+			if (dirtyFields.has(key)) {
+				(patch as Record<string, unknown>)[key] = draftSettings[key];
+			}
+		}
+		if (Object.keys(patch).length === 0) return true;
+		const ok = await props.onChange(patch).catch(() => false);
+		if (ok) {
+			baseSnapshotRef.current = { ...baseSnapshotRef.current, ...deepClone(patch) };
+			setBaselineToken((v) => v + 1);
+		}
+		return ok;
+	}, [draftSettings, dirtyFields, props.onChange]);
 
 	// 外观实时预览：草稿中明暗/外观主题/主色变化时立即写入 <html> 的 data-* 属性，
 	// 与 App.tsx 的持久化应用共用 applyAppearanceAttributes（见 themeAppearance.ts）。
@@ -469,7 +494,8 @@ function SettingsModalContent(props: SettingsModalProps) {
 		restoreAppearanceFromSnapshot();
 		visionDraft.reset();
 		setPerAreaFontSize(baseSnapshotRef.current.uiFontSize !== null || baseSnapshotRef.current.tabBarFontSize !== null || baseSnapshotRef.current.chatFontSize !== null || baseSnapshotRef.current.inputFontSize !== null);
-		// tab 局部编辑态（Web 端口、宠物预览）由各自 tab 监听信号重置
+		// tab 局部编辑态（WSL 输入、Web 端口、宠物预览）由各自 tab 监听信号重置
+		setDevTabResetKey((k) => k + 1);
 		setWebTabResetKey((k) => k + 1);
 		setPetTabResetKey((k) => k + 1);
 	};
@@ -923,6 +949,8 @@ function SettingsModalContent(props: SettingsModalProps) {
 												draft={draftSettings}
 												updateDraft={updateDraft}
 												isDirty={isDirty}
+												onEnsureWslSettingsSaved={commitWslDraftFields}
+												resetKey={devTabResetKey}
 												appInfo={props.appInfo}
 												piStatus={props.piStatus}
 												piChecking={props.piChecking}

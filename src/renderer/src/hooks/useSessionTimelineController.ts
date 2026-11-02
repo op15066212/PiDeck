@@ -460,6 +460,8 @@ export function useSessionTimelineController(options: { sessionId?: string; mess
 	/** 与锚点一起保存：DOM 裁剪窗口是阅读位置的一部分，而非瞬时 UI 状态。 */
 	const renderedWindowTurnsRef = useRef(TIMELINE_SCROLLED_TURN_LIMIT);
 	const scrollAnchorFrameRef = useRef<number | undefined>(undefined);
+	const bottomRestoreVerificationRef = useRef<number | undefined>(undefined);
+	const bottomRestoreRequestRef = useRef(0);
 	/** 最近一次 scroll 事件的可见行快照：rAF 里的锚点重算复用它，不再读第二遍布局。 */
 	const scrollVisibleRowsRef = useRef<readonly VisibleTimelineRow[]>([]);
 	const scrollSaveTimerRef = useRef<number | undefined>(undefined);
@@ -1921,6 +1923,13 @@ export function useSessionTimelineController(options: { sessionId?: string; mess
 		return clearHighlightTimers;
 	}, [clearHighlightTimers, clearProgrammaticTimelineScroll, clearTimelineReveal, ownerKey]);
 
+	useEffect(
+		() => () => {
+			if (bottomRestoreVerificationRef.current !== undefined) cancelAnimationFrame(bottomRestoreVerificationRef.current);
+		},
+		[],
+	);
+
 	useLayoutEffect(() => {
 		if (ownerKey === LEGACY_OWNER_KEY) return;
 		ownerWindowTurnsRef.current.set(ownerKey, effectiveWindowTurns);
@@ -1978,6 +1987,8 @@ export function useSessionTimelineController(options: { sessionId?: string; mess
 			setAutoScroll(true);
 			setShowScrollToBottom(false);
 			setRestorePhase("complete");
+			const restoreRequest = ++bottomRestoreRequestRef.current;
+			if (bottomRestoreVerificationRef.current !== undefined) cancelAnimationFrame(bottomRestoreVerificationRef.current);
 			const frame = requestAnimationFrame(() => {
 				const timeline = timelineRef.current;
 				if (!timeline || ownerKeyRef.current !== requestOwnerKey) return;
@@ -1988,6 +1999,19 @@ export function useSessionTimelineController(options: { sessionId?: string; mess
 				} else {
 					timeline.scrollTo({ top: timeline.scrollHeight, behavior: "instant" });
 				}
+				// 恢复被同帧内容变化/旧动画取消时，引擎可能已上报 following，DOM 却不在底部。
+				// 下一帧按真实几何对账；失败则退出跟底并露出回底按钮，避免无声卡在历史位置。
+				const verificationFrame = requestAnimationFrame(() => {
+					if (bottomRestoreVerificationRef.current === verificationFrame) bottomRestoreVerificationRef.current = undefined;
+					const current = timelineRef.current;
+					if (restoreRequest !== bottomRestoreRequestRef.current || !current || ownerKeyRef.current !== requestOwnerKey || !autoScrollRef.current) return;
+					if (!isTimelineAtBottom(current.scrollTop, current.scrollHeight, current.clientHeight)) {
+						autoScrollRef.current = false;
+						setAutoScroll(false);
+						setShowScrollToBottom(true);
+					}
+				});
+				bottomRestoreVerificationRef.current = verificationFrame;
 			});
 			return () => cancelAnimationFrame(frame);
 		}

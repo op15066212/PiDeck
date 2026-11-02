@@ -2033,6 +2033,8 @@ export class AgentManager {
 		const defaults = this.getAgentSessionIdentityDefaults();
 		return [...this.agents.values()].find(
 			(runtime) =>
+				// standby 只能经 claimStandbyAgent 转正；普通 create 复用它会在绑定后仍被 list/getAgentId 忽略。
+				!runtime.tab.standby &&
 				this.sessionKeyFor(
 					{
 						projectId: runtime.tab.projectId,
