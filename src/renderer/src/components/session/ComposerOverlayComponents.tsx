@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
 import type { FileTreeNode, ProjectFileTarget } from "../../../../shared/types";
 import { t } from "../../i18n";
+import { useMenuFocusReturn } from "../../hooks/useMenuFocusReturn";
 import type { SuggestionItem } from "../app/AppUtils";
 import { Button } from "../ui-shadcn/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "../ui-shadcn/dropdown-menu";
@@ -85,6 +86,8 @@ export function FileContextMenu(props: {
 	const node = props.menu.node;
 	const parentRelativePath = node.type === "directory" ? node.relativePath : node.relativePath.split("/").slice(0, -1).join("/");
 	const targetDir: string | ProjectFileTarget | undefined = node.target ? { projectId: node.target.projectId, relativePath: parentRelativePath } : node.path ? (node.type === "directory" ? node.path : node.path.split(/[\\/]/).slice(0, -1).join("/") || ".") : undefined;
+	// 关闭后把焦点还给打开菜单的文件树行（默认会落在下面那个 0×0 隐藏触发器上）
+	const handleCloseAutoFocus = useMenuFocusReturn();
 
 	// #115 U5：右键菜单换 Radix DropdownMenu。虚拟锚点把菜单钉在右键坐标上，
 	// 视口碰撞翻转/焦点圈定/ESC 关闭全由 Radix 负责，删掉手写的测高翻转与遮罩。
@@ -112,7 +115,7 @@ export function FileContextMenu(props: {
 					pointerEvents: "none",
 				}}
 			/>
-			<DropdownMenuContent align="start" side="bottom" className="min-w-40">
+			<DropdownMenuContent align="start" side="bottom" className="min-w-40" onCloseAutoFocus={handleCloseAutoFocus}>
 				{/* 目录同样可引用：拖拽落点与 @ 建议列表都允许目录，右键菜单不应更严。
 				    引用文本由 fileNodeDragPayloadToRef 统一补尾斜杠（@dir/），
 				    裸 @dir 过不了 chip 路径规则，模型也容易当成 mention。 */}
