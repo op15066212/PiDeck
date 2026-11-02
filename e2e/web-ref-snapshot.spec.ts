@@ -3,8 +3,12 @@ import { test, expect } from "./mock-pi-fixture";
 /**
  * 临时截图脚本（DeepSeek 参考改造前后对照，非回归测试）：
  * 起 Web 服务 + mock pi，截桌面/移动、空态/会话态。
- * 运行：npx playwright test e2e/web-ref-snapshot.spec.ts
+ * 截图写到 e2e/.snapshots/（已 gitignore，仅本地对照，不入库）。
+ * 默认跳过，避免混进回归套件；需要时显式开启：
+ *   PIDECK_CAPTURE_SCREENSHOTS=1 npx playwright test e2e/web-ref-snapshot.spec.ts
  */
+test.skip(process.env.PIDECK_CAPTURE_SCREENSHOTS !== "1", "manual screenshot script; set PIDECK_CAPTURE_SCREENSHOTS=1 to run");
+
 test.use({
 	seedSettings: {
 		webServiceEnabled: true,

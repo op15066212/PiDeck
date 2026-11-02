@@ -17,15 +17,35 @@ function send(message) {
 	process.stdout.write(`${JSON.stringify(message)}\n`);
 }
 
+/**
+ * 按 ACP schema 校验一条 mcpServers 项：`{name, command, args[], env[]}`。
+ *
+ * 真实 agent（@agentclientprotocol/sdk 的 zod schema）对这一步是严格校验，形状不对
+ * 就回 `-32602 Invalid params` 并让整个 session/new 失败（CodeBuddy 2.179.2 实测：
+ * env 传对象而不是 `{name, value}` 数组时，session/load 与回退的 session/new 双双 -32602）。
+ * 假 agent 也必须同样严格，否则这个 stub 只能证明「我们自己前后一致」。
+ */
+function invalidMcpServer(server) {
+	if (!server || typeof server !== "object") return "item is not an object";
+	if (typeof server.name !== "string") return "name missing";
+	if (typeof server.command !== "string") return "command missing";
+	if (!Array.isArray(server.args) || server.args.some((arg) => typeof arg !== "string")) return "args is not string[]";
+	if (!Array.isArray(server.env)) return "env is not EnvVariable[]";
+	if (server.env.some((item) => !item || typeof item.name !== "string" || typeof item.value !== "string")) return "env item is not {name, value}";
+	return "";
+}
+
 /** 起一个 MCP 服务器并取它的工具清单（最小 MCP 客户端：initialize → tools/list）。 */
 function listTools(server) {
+	// env 是 `{name, value}` 数组，起进程时要落回对象
+	const envObject = Object.fromEntries(server.env.map((item) => [item.name, item.value]));
 	return new Promise((resolve) => {
-		const proc = spawn(server.command, server.args ?? [], {
-			env: { ...process.env, ...(server.env ?? {}) },
+		const proc = spawn(server.command, server.args, {
+			env: { ...process.env, ...envObject },
 			stdio: ["pipe", "pipe", "pipe"],
 			windowsHide: true,
 		});
-		const result = { name: server.name, tools: [], envKeys: Object.keys(server.env ?? {}), error: "" };
+		const result = { name: server.name, tools: [], envKeys: Object.keys(envObject), error: "" };
 		const pending = new Map();
 		let nextId = 1;
 		const call = (method, params) => {
@@ -92,8 +112,16 @@ createInterface({ input: process.stdin }).on("line", (line) => {
 	}
 	if (message.method === "session/new" || message.method === "session/load") {
 		void (async () => {
-			for (const server of message.params?.mcpServers ?? []) mcpSummary.push(await listTools(server));
-			if (out) writeFileSync(out, JSON.stringify({ method: message.method, mcpServers: message.params?.mcpServers ?? [], summary: mcpSummary }, null, 2));
+			const servers = message.params?.mcpServers;
+			// mcpServers 必须存在且每条都合 schema：缺字段/形状不对就是 -32602
+			const invalid = !Array.isArray(servers) ? "mcpServers missing" : servers.map(invalidMcpServer).find(Boolean) ?? "";
+			if (invalid) {
+				if (out) writeFileSync(out, JSON.stringify({ method: message.method, error: invalid, mcpServers: servers ?? null }, null, 2));
+				send({ jsonrpc: "2.0", id: message.id, error: { code: -32602, message: `Invalid params: ${invalid}` } });
+				return;
+			}
+			for (const server of servers) mcpSummary.push(await listTools(server));
+			if (out) writeFileSync(out, JSON.stringify({ method: message.method, mcpServers: servers, summary: mcpSummary }, null, 2));
 			send({ jsonrpc: "2.0", id: message.id, result: { sessionId: "sess-memory-stub" } });
 		})();
 		return;

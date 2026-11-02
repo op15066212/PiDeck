@@ -59,7 +59,16 @@ test("ACP：mcpServers 项是协议要求的 stdio 形态（name/command/args/en
 	assert.equal(server.name, "pideck-agent-memory");
 	assert.equal(server.command, APP.execPath);
 	assert.deepEqual(server.args, mount.args);
-	assert.equal(server.env.PIDECK_AGENT_MEMORY_DIR, mount.env.PIDECK_AGENT_MEMORY_DIR);
+	// ACP 的 McpServerStdio.env 是 EnvVariable[]：传对象会被 agent 的 schema 拒成 -32602 Invalid params
+	assert.ok(Array.isArray(server.env), "env 必须是数组，不能是对象映射");
+	for (const item of server.env) {
+		assert.deepEqual(Object.keys(item).sort(), ["name", "value"], "env 项只能是 {name, value}");
+		assert.equal(typeof item.value, "string");
+	}
+	const envMap = Object.fromEntries(server.env.map((item) => [item.name, item.value]));
+	// 不 deepEqual 整个对象：TS 模块跨 realm 加载，原型不同会被误判，按字段断言
+	assert.deepEqual(Object.keys(envMap).sort(), Object.keys(mount.env).sort());
+	for (const [name, value] of Object.entries(mount.env)) assert.equal(envMap[name], value, `${name} 在数组形式里丢失或改值`);
 });
 
 test("mcp.json 合并：只增改自己那一项，其它服务器与顶层键原样保留", () => {
