@@ -5565,8 +5565,9 @@ export const enUS: Record<TranslationKey, string> = {
 	"settings.agentMemoryStandingSave": "Save standing instructions",
 	"settings.agentMemoryStandingLoading": "Loading standing instructions…",
 
-	"settings.agentMemoryOpenFolder": "Open memory folder",	"settings.agentMemoryDeviceRenameTitle": "Rename this device",
-	"settings.agentMemoryDeviceRenamed": "Device renamed to \"{name}\"",
+	"settings.agentMemoryOpenFolder": "Open memory folder",
+	"settings.agentMemoryDeviceRenameTitle": "Rename this device",
+	"settings.agentMemoryDeviceRenamed": 'Device renamed to "{name}"',
 	"settings.agentMemoryDeleteEntryConfirm": 'Once deleted this memory never reaches a session again, and a tombstone stops older exports from reviving it. Deleting: "{content}"',
 	"settings.agentMemoryTargetMemory": "General memory",
 	"settings.agentMemoryTargetUser": "User preferences",

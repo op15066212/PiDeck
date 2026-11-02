@@ -232,10 +232,7 @@ test("会话检索：DSH 事件日志入索引（zstd 帧、generation 择优、
 	mkdirSync(legacyDir, { recursive: true });
 	writeFileSync(
 		join(legacyDir, "session.jsonl"),
-		[
-			JSON.stringify({ type: "session", id: "session-99999999-2222-3333-4444-555555555555", cwd: "D:/proj-dsh", parentSession: sid }),
-			JSON.stringify({ type: "user/message", seq: 1, time: 1767225600000, data: { content: [{ type: "text", text: "派生会话正文" }] } }),
-		].join(`${NL}`),
+		[JSON.stringify({ type: "session", id: "session-99999999-2222-3333-4444-555555555555", cwd: "D:/proj-dsh", parentSession: sid }), JSON.stringify({ type: "user/message", seq: 1, time: 1767225600000, data: { content: [{ type: "text", text: "派生会话正文" }] } })].join(`${NL}`),
 		"utf8",
 	);
 	const bothDir = join(dshDir, "--D-proj-dsh--", "session-88888888-2222-3333-4444-555555555555");
