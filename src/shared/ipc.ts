@@ -1139,6 +1139,14 @@ export const ipcChannels = {
 	agentMemoryList: "agent-memory:list",
 	/** 删除单条记忆（写墓碑，旧导出包不会把它导回来） */
 	agentMemoryDeleteEntry: "agent-memory:delete-entry",
+	/** 撤销刚删的条目（写回内容并回收墓碑） */
+	agentMemoryRestoreEntry: "agent-memory:restore-entry",
+	agentMemoryStandingRead: "agent-memory:standing-read",
+	agentMemoryStandingWrite: "agent-memory:standing-write",
+	/** 重命名本机设备（id 不变，只改显示名与导出包来源标注） */
+	agentMemoryRenameDevice: "agent-memory:rename-device",
+	/** 在系统文件管理器里打开记忆根目录（主进程自己拼路径，渲染层不传路径） */
+	agentMemoryRevealRoot: "agent-memory:reveal-root",
 	hostPluginsList: "host-plugins:list",
 	hostPluginsRescan: "host-plugins:rescan",
 	hostPluginsInstall: "host-plugins:install",

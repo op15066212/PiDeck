@@ -17,6 +17,7 @@ import { SettingsSection } from "./SettingsStorageTab";
 import { SettingSwitchRow } from "./SettingRows";
 import { AgentMemorySettingsSection } from "./AgentMemorySettingsSection";
 import { AgentMemoryEntryList } from "./AgentMemoryEntryList";
+import { AgentMemoryStandingEditor } from "./AgentMemoryStandingEditor";
 
 type AgentMemoryTabProps = {
 	draft: AppSettings;
@@ -45,8 +46,13 @@ export function AgentMemoryTab({ draft, updateDraft, isDirty }: AgentMemoryTabPr
 				/>
 			</SettingsSection>
 
+			{/* STANDING 只有用户能写（Agent 工具改不了），编辑入口独占一区；保存立即生效，不等设置保存。 */}
+			<SettingsSection id="settings-section-memory-standing" title={t("settings.agentMemoryStandingSection")} description={t("settings.agentMemoryStandingSectionDesc")} divided>
+				<AgentMemoryStandingEditor onChanged={bump} />
+			</SettingsSection>
+
 			<SettingsSection id="settings-section-memory-status" title={t("settings.agentMemoryStatus")} description={t("settings.agentMemoryStatusDesc")} divided>
-				<AgentMemorySettingsSection reloadKey={reloadKey} onChanged={bump} />
+				<AgentMemorySettingsSection reloadKey={reloadKey} onChanged={bump} showLearn={draft.agentMemoryAutoLearnEnabled ?? false} />
 			</SettingsSection>
 
 			<SettingsSection id="settings-section-memory-entries" title={t("settings.agentMemoryEntries")} description={t("settings.agentMemoryEntriesDesc")} divided>

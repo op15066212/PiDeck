@@ -9,11 +9,13 @@
  * 任何一步失败都不留下「文件改了但索引没改」或反向的半状态。
  */
 
+import { statSync } from "node:fs";
+
 import { readAllEntries, mutateEntries, readEntries } from "./files.mjs";
 import { formatFailureEntry, normalizeKey, parseFailureEntry } from "./format.mjs";
-import { hasCjk, indexStats, searchEntries, searchMessages, syncEntries } from "./db.mjs";
+import { hasCjk, indexStats, recordSyncState, searchEntries, searchMessages, syncEntries, syncStateOf } from "./db.mjs";
 import { entryCategory } from "./format.mjs";
-import { FAILURE_CATEGORIES, FILE_BUDGETS, MAX_ENTRY_CHARS, MEMORY_TARGETS } from "./paths.mjs";
+import { FAILURE_CATEGORIES, FILE_BUDGETS, MAX_ENTRY_CHARS, MEMORY_TARGETS, targetFilePath } from "./paths.mjs";
 import { scanMemoryContent } from "./scan.mjs";
 import { indexSources } from "./sessions.mjs";
 import { addTombstone, deviceScopeId } from "./sync.mjs";
@@ -49,8 +51,27 @@ function scopeLabel(projectId) {
 	return projectId.startsWith("device:") ? "device" : "project";
 }
 
-/** 把某个 target 的 Markdown 当前内容回灌进索引。 */
-function syncTarget(root, target, projectId) {
+/**
+ * 把某个 target 的 Markdown 当前内容回灌进索引。
+ *
+ * `force` 给刚刚改写过文件的调用方（add/replace/remove）：同毫秒内同尺寸的改写理论上可能
+ * 骗过 size+mtime 判定，改动路径不赌这个概率。其余调用（检索前的 syncAll）走判定，
+ * 文件没变就整段跳过——这是工具调用热路径上最大的省项。
+ */
+export function syncTarget(root, target, projectId, { force = false } = {}) {
+	const stateKey = `entries:${target}|${projectId}`;
+	let stat = null;
+	try {
+		stat = statSync(targetFilePath(root, target, projectId));
+	} catch {
+		stat = null;
+	}
+	if (!force) {
+		const state = syncStateOf(root, stateKey);
+		if (state !== undefined && state === (stat ? `${stat.size}:${stat.mtimeMs}` : "missing")) {
+			return readEntries(root, target, projectId);
+		}
+	}
 	const entries = readEntries(root, target, projectId);
 	syncEntries(root, {
 		target,
@@ -59,6 +80,7 @@ function syncTarget(root, target, projectId) {
 		entries,
 		categoryOf: (content) => (target === "failure" ? entryCategory(content) : ""),
 	});
+	recordSyncState(root, stateKey, stat);
 	return entries;
 }
 
@@ -108,7 +130,7 @@ export function addMemory(root, { target = "memory", content, category, projectI
 		return { entries, result: { duplicate: false } };
 	});
 
-	syncTarget(root, scope.target, scope.projectId);
+	syncTarget(root, scope.target, scope.projectId, { force: true });
 	return {
 		ok: true,
 		target,
@@ -140,7 +162,7 @@ export function replaceMemory(root, { target = "memory", oldContent, content, pr
 		return { entries, result: { replaced: true } };
 	});
 
-	syncTarget(root, scope.target, scope.projectId);
+	syncTarget(root, scope.target, scope.projectId, { force: true });
 	return { ok: true, target, scope: scopeLabel(scope.projectId), projectId: scope.projectId, count: outcome.count, dropped: outcome.dropped };
 }
 
@@ -160,7 +182,7 @@ export function removeMemory(root, { target = "memory", content, projectId = "" 
 		return { entries, result: { removed: true } };
 	});
 
-	syncTarget(root, scope.target, scope.projectId);
+	syncTarget(root, scope.target, scope.projectId, { force: true });
 	// 删除要留墓碑：否则另一台设备用旧包导入时会把这条「删掉的记忆」复活。
 	// 墓碑只拦导入，不拦本进程的 add——用户当场重写同一条说明意图明确。
 	if (outcome.result.removed) addTombstone(root, { target: scope.target, scope: scopeLabel(scope.projectId), projectKey: scope.projectId, content });

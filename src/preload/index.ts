@@ -277,6 +277,11 @@ const agentMemory = {
 	importBundle: (options?: import("../shared/types/agentMemory").AgentMemoryImportOptions) => ipcRenderer.invoke(ipcChannels.agentMemoryImport, options ?? {}) as Promise<import("../shared/types/agentMemory").AgentMemoryResult<import("../shared/types/agentMemory").AgentMemoryImportResult>>,
 	list: () => ipcRenderer.invoke(ipcChannels.agentMemoryList) as Promise<import("../shared/types/agentMemory").AgentMemoryResult<import("../shared/types/agentMemory").AgentMemoryEntryList>>,
 	deleteEntry: (input: { target: string; projectId?: string; key: string }) => ipcRenderer.invoke(ipcChannels.agentMemoryDeleteEntry, input) as Promise<import("../shared/types/agentMemory").AgentMemoryResult<{ removed: number }>>,
+	restoreEntry: (input: { target: string; projectId?: string; content: string; category?: string }) => ipcRenderer.invoke(ipcChannels.agentMemoryRestoreEntry, input) as Promise<import("../shared/types/agentMemory").AgentMemoryResult<{ restored: boolean }>>,
+	revealRoot: () => ipcRenderer.invoke(ipcChannels.agentMemoryRevealRoot) as Promise<import("../shared/types/agentMemory").AgentMemoryResult<null>>,
+	standingRead: () => ipcRenderer.invoke(ipcChannels.agentMemoryStandingRead) as Promise<import("../shared/types/agentMemory").AgentMemoryResult<string>>,
+	standingWrite: (input: { content: string }) => ipcRenderer.invoke(ipcChannels.agentMemoryStandingWrite, input) as Promise<import("../shared/types/agentMemory").AgentMemoryResult<{ chars: number }>>,
+	renameDevice: (name: string) => ipcRenderer.invoke(ipcChannels.agentMemoryRenameDevice, name) as Promise<import("../shared/types/agentMemory").AgentMemoryResult<{ id: string; name: string }>>,
 };
 
 const api = {

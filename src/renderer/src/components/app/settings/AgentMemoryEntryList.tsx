@@ -5,24 +5,22 @@
  * 全在工具层（`memory_add/replace/remove`），设置页做一份编辑器就等于把那些规则抄第二遍；
  * 想改内容就让 Agent 改，想改措辞就删掉再说一遍。
  *
- * 列表按「作用域 → 文件」分组：用户要判断一条记忆该不该在，首先得知道它落在哪个文件里
- * （全局四份 / 某个项目 / 本机设备），否则「为什么 DSH 会话看不到」这类问题无从解释。
+ * 形态：**表格式列表**（`ui-shadcn/table` + 卡片外壳），与「进程与内存监控」等设置面板同一套视觉：
+ * 卡片头部放搜索框与计数，下面是可以滚动的表格，表头吸顶。分组不再靠嵌套小节，而是在表格里
+ * 插一条跨列的分组行（作用域 + 落盘文件 + 预算）——既保留「这条记忆在哪个文件里」这个关键信息，
+ * 又不会把列表拆成几坨各自的边框。
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { ChevronDown, ChevronRight, Trash2 } from "lucide-react";
-import type { AgentMemoryEntry, AgentMemoryEntryGroup, AgentMemoryEntryList } from "../../../../../shared/types/agentMemory";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { Brain, ChevronDown, ChevronRight, RotateCcw, Search, SearchX, Trash2 } from "lucide-react";
+import type { AgentMemoryEntry, AgentMemoryEntryList } from "../../../../../shared/types/agentMemory";
 import { t } from "../../../i18n";
 import { desktopApi } from "../../../desktopApi";
 import { Button } from "../../ui-shadcn/button";
 import { Input } from "../../ui-shadcn/input";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../ui-shadcn/table";
 import { ConfirmDialog } from "../../ui-shadcn/ConfirmDialog";
 import { describeAgentMemoryCode, memoryGroupScopeLabel, memoryTargetLabel } from "./agentMemoryLabels";
-
-/** 列表为空时的提示：与设置页其它空状态同一套淡字排版。 */
-function EmptyHint(props: { text: string }) {
-	return <p className="px-4 pb-2 text-xs text-muted-foreground">{props.text}</p>;
-}
 
 /** 条目身份：同一段内容可能同时存在于全局与项目作用域，所以键里必须带作用域。 */
 function entryId(entry: AgentMemoryEntry): string {
@@ -40,6 +38,9 @@ export function AgentMemoryEntryList(props: {
 	const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 	const [busyKey, setBusyKey] = useState<string | null>(null);
 	const [pending, setPending] = useState<AgentMemoryEntry | null>(null);
+	/** 刚删掉、还来得及撤销的那条：拿着它把内容原样写回并回收墓碑。 */
+	const [deleted, setDeleted] = useState<AgentMemoryEntry | null>(null);
+	const [restoring, setRestoring] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 
 	const refresh = useCallback(async () => {
@@ -78,6 +79,7 @@ export function AgentMemoryEntryList(props: {
 			const result = await desktopApi.agentMemory.deleteEntry({ target: entry.target, projectId: entry.projectId, key: entry.key });
 			if (!result.ok) setError(describeAgentMemoryCode(result.code));
 			else {
+				setDeleted(entry);
 				await refresh();
 				props.onChanged?.();
 			}
@@ -86,53 +88,131 @@ export function AgentMemoryEntryList(props: {
 		}
 	};
 
+	const runRestore = async () => {
+		const entry = deleted;
+		setDeleted(null);
+		if (!entry) return;
+		setRestoring(true);
+		setError(null);
+		try {
+			const result = await desktopApi.agentMemory.restoreEntry({ target: entry.target, projectId: entry.projectId, content: entry.content, category: entry.category || undefined });
+			if (!result.ok) setError(describeAgentMemoryCode(result.code));
+			else {
+				await refresh();
+				props.onChanged?.();
+			}
+		} finally {
+			setRestoring(false);
+		}
+	};
+
+	// 表格四种状态：加载中 / 完全空 / 过滤无匹配 / 有数据。前三种各自占一行跨度撑满表格，避免出现「空表格骨头」。
+	const emptyKind = !data ? "loading" : data.total === 0 ? "empty" : shown === 0 ? "nomatch" : null;
+
 	return (
-		<div className="flex flex-col gap-2">
-			<div className="flex items-center gap-2 px-4">
-				<Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("settings.agentMemorySearchPlaceholder")} className="h-8 max-w-sm text-xs" />
-				<span className="text-xs text-muted-foreground">{data ? t("settings.agentMemoryEntriesCount", { shown: String(shown), total: String(data.total) }) : t("common.loading")}</span>
+		<div className="overflow-hidden rounded-lg border border-border-subtle bg-bg-panel">
+			{/* 卡片头：搜索框 + 计数。与「进程与内存监控」表格同一套像素（border-b + px-3 py-2）。 */}
+			<div className="flex items-center gap-2 border-b border-border-subtle px-3 py-2">
+				<div className="relative w-full max-w-xs">
+					<Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+					<Input
+						size="sm"
+						value={query}
+						onChange={(event) => setQuery(event.target.value)}
+						onKeyDown={(event) => {
+							if (event.key === "Escape" && query) setQuery("");
+						}}
+						placeholder={t("settings.agentMemorySearchPlaceholder")}
+						aria-label={t("settings.agentMemorySearchPlaceholder")}
+						className="pl-8"
+					/>
+				</div>
+				<span className="ml-auto shrink-0 text-micro tabular-nums text-muted-foreground">{data ? t("settings.agentMemoryEntriesCount", { shown: String(shown), total: String(data.total) }) : t("common.loading")}</span>
 			</div>
-			{error ? <p className="px-4 text-xs text-destructive">{error}</p> : null}
-			{data && data.total === 0 ? <EmptyHint text={t("settings.agentMemoryEmpty")} /> : null}
-			{data && data.total > 0 && shown === 0 ? <EmptyHint text={t("settings.agentMemoryNoMatch")} /> : null}
-			<div className="flex flex-col divide-y divide-border-subtle">
-				{groups.map((group) => (
-					<div key={`${group.scope}|${group.projectId}|${group.target}`} className="flex flex-col">
-						<div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-4 pt-3 pb-1 text-xs text-muted-foreground">
-							<span className="rounded-sm bg-muted px-1.5 py-0.5 text-foreground">{memoryGroupScopeLabel(group)}</span>
-							<span>{memoryTargetLabel(group.target)}</span>
-							<span className="font-mono opacity-70">{group.file}</span>
-							<span className="tabular-nums">
-								{group.budget
-									? t("settings.agentMemoryGroupBudget", { count: String(group.entries.length), chars: String(group.chars), maxChars: String(group.budget.maxChars), maxEntries: String(group.budget.maxEntries) })
-									: t("settings.agentMemoryGroupPlain", { count: String(group.entries.length), chars: String(group.chars) })}
-							</span>
-						</div>
-						{group.entries.map((entry) => {
-							const id = entryId(entry);
-							const open = expanded[id] === true;
-							return (
-								<div key={id} className="px-4 py-2">
-									<div className="flex items-start gap-2">
-										<button type="button" className="min-w-0 flex-1 text-left text-sm text-foreground hover:text-primary" aria-expanded={open} onClick={() => setExpanded((current) => ({ ...current, [id]: !open }))}>
-											<span className="mr-1 inline-flex align-text-bottom text-muted-foreground">{open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</span>
-											{/* 折叠态只显示首行：记忆条目是纯文本，首行通常就是结论 */}
-											<span className={open ? "whitespace-pre-wrap break-words" : "line-clamp-2 break-words"}>{open ? entry.content : entry.content.split("\n")[0]}</span>
-										</button>
-										<span className="flex shrink-0 items-center gap-2">
-											{entry.category ? <span className="rounded-sm bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">{entry.category}</span> : null}
-											<span className="text-[11px] tabular-nums text-muted-foreground">{t("settings.agentMemoryEntryChars", { chars: String(entry.chars) })}</span>
-											<Button type="button" variant="ghost" size="icon-sm" aria-label={t("settings.agentMemoryDeleteEntry")} disabled={busyKey === id} onClick={() => setPending(entry)}>
-												<Trash2 size={14} strokeWidth={2} aria-hidden="true" />
-											</Button>
+
+			{error ? <p className="border-b border-border-subtle px-3 py-2 text-control text-destructive">{error}</p> : null}
+
+			{deleted ? (
+				<div className="flex items-center gap-2 border-b border-border-subtle bg-bg-muted px-3 py-2">
+					<span className="min-w-0 flex-1 truncate text-caption text-muted-foreground">
+						{t("settings.agentMemoryDeletedEntry", { content: deleted.content.split("\n")[0].length > 80 ? `${deleted.content.split("\n")[0].slice(0, 80)}…` : deleted.content.split("\n")[0] })}
+					</span>
+					<Button type="button" variant="ghost" size="sm" disabled={restoring} onClick={() => void runRestore()}>
+						<RotateCcw size={13} aria-hidden="true" />
+						{t("settings.agentMemoryUndoDelete")}
+					</Button>
+				</div>
+			) : null}
+
+			<Table>
+				<TableHeader>
+					<TableRow className="hover:bg-transparent">
+						<TableHead>{t("settings.agentMemoryTableContent")}</TableHead>
+						<TableHead className="w-16 text-right">{t("settings.agentMemoryTableChars")}</TableHead>
+						<TableHead className="w-12" aria-label={t("settings.agentMemoryTableActions")} />
+					</TableRow>
+				</TableHeader>
+				<TableBody>
+					{emptyKind ? (
+						<TableRow className="hover:bg-transparent">
+							<TableCell colSpan={3} className="whitespace-normal">
+								<div className="flex flex-col items-center gap-2 py-8 text-center">
+									<span className="flex size-9 items-center justify-center rounded-full bg-bg-muted text-muted-foreground">{emptyKind === "nomatch" ? <SearchX size={16} aria-hidden="true" /> : <Brain size={16} aria-hidden="true" />}</span>
+									<p className="max-w-sm text-caption leading-relaxed text-muted-foreground">{emptyKind === "loading" ? t("common.loading") : emptyKind === "empty" ? t("settings.agentMemoryEmpty") : t("settings.agentMemoryNoMatch")}</p>
+									{emptyKind === "nomatch" ? (
+										<Button type="button" variant="ghost" size="sm" onClick={() => setQuery("")}>
+											{t("settings.agentMemorySearchClear")}
+										</Button>
+									) : null}
+								</div>
+							</TableCell>
+						</TableRow>
+					) : null}
+					{groups.map((group) => (
+						<Fragment key={`${group.scope}|${group.projectId}|${group.target}`}>
+							{/* 分组行：作用域 + 落盘文件 + 预算。跨列铺满，读起来是表格的一条分隔带，不是第二个容器。 */}
+							<TableRow className="bg-bg-muted hover:bg-bg-muted">
+								<TableCell colSpan={3} className="py-1 whitespace-normal">
+									<div className="flex items-center gap-2 text-caption text-muted-foreground">
+										<span className="shrink-0 rounded-sm bg-background px-1.5 py-0.5 text-foreground">{memoryGroupScopeLabel(group)}</span>
+										<span className="shrink-0">{memoryTargetLabel(group.target)}</span>
+										<span className="min-w-0 truncate font-mono opacity-70" title={group.file}>
+											{group.file}
+										</span>
+										<span className="ml-auto shrink-0 tabular-nums">
+											{group.budget
+												? t("settings.agentMemoryGroupBudget", { count: String(group.entries.length), chars: String(group.chars), maxChars: String(group.budget.maxChars), maxEntries: String(group.budget.maxEntries) })
+												: t("settings.agentMemoryGroupPlain", { count: String(group.entries.length), chars: String(group.chars) })}
 										</span>
 									</div>
-								</div>
-							);
-						})}
-					</div>
-				))}
-			</div>
+								</TableCell>
+							</TableRow>
+							{group.entries.map((entry) => {
+								const id = entryId(entry);
+								const open = expanded[id] === true;
+								return (
+									<TableRow key={id} data-state={open ? "selected" : undefined}>
+										<TableCell className="max-w-0 whitespace-normal">
+											{/* 折叠态单行省略，展开后整段铺开：记忆条目是纯文本，首行通常就是结论。 */}
+											<button type="button" className="flex w-full items-start gap-1.5 text-left text-control text-foreground focus-visible:outline-none" aria-expanded={open} onClick={() => setExpanded((current) => ({ ...current, [id]: !open }))}>
+												<span className="mt-0.5 shrink-0 text-muted-foreground">{open ? <ChevronDown size={13} aria-hidden="true" /> : <ChevronRight size={13} aria-hidden="true" />}</span>
+												<span className={open ? "min-w-0 whitespace-pre-wrap break-words" : "min-w-0 truncate"}>{open ? entry.content : entry.content.split("\n")[0]}</span>
+											</button>
+										</TableCell>
+										<TableCell className="text-right text-caption tabular-nums text-muted-foreground">{entry.chars}</TableCell>
+										<TableCell>
+											<Button type="button" variant="ghost" size="icon-sm" aria-label={t("settings.agentMemoryDeleteEntry")} disabled={busyKey === id} onClick={() => setPending(entry)} className="text-muted-foreground hover:text-destructive">
+												<Trash2 size={13} aria-hidden="true" />
+											</Button>
+										</TableCell>
+									</TableRow>
+								);
+							})}
+						</Fragment>
+					))}
+				</TableBody>
+			</Table>
+
 			{pending ? (
 				<ConfirmDialog
 					title={t("settings.agentMemoryDeleteEntry")}

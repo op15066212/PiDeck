@@ -6,8 +6,8 @@
  * - 去重键（墓碑与 `memory_replace` 定位同一份）：`normalizeKey`；
  * - 文件布局（`projects/<key>/`、`devices/<key>/`）：`targetFilePath`。
  *
- * 这里**只做**列举与删除；新增/修改永远只由 Agent 在会话里经工具发生。删除写一条墓碑，
- * 让「删掉的条目被旧导出包导回来」不可能发生。
+ * 这里只做列举、删除与 STANDING 的设置页编辑；其余新增/修改永远只由 Agent 在会话里
+ * 经工具发生。删除写一条墓碑，让「删掉的条目被旧导出包导回来」不可能发生。
  */
 
 import { existsSync, readdirSync, statSync } from "node:fs";
@@ -15,7 +15,8 @@ import { join } from "node:path";
 import { entryCategory, normalizeKey, parseEntries, parseFailureEntry, renderEntries } from "../../../resources/agent-memory/format.mjs";
 import { readRaw, writeAtomic } from "../../../resources/agent-memory/files.mjs";
 import { FILE_BUDGETS, TARGET_FILES, projectKeyFromPath, resolveMemoryRoot, targetFilePath } from "../../../resources/agent-memory/paths.mjs";
-import { addTombstone, exportEntryId } from "../../../resources/agent-memory/sync.mjs";
+import { addTombstone, exportEntryId, removeTombstone } from "../../../resources/agent-memory/sync.mjs";
+import { addMemory, syncTarget } from "../../../resources/agent-memory/tools.mjs";
 
 export type AgentMemoryTarget = keyof typeof TARGET_FILES;
 export type AgentMemoryScope = "global" | "project" | "device";
@@ -166,12 +167,85 @@ export function deleteAgentMemoryEntry(root: string | undefined, input: { target
 	if (removed.length === 0) return { removed: 0 };
 	writeAtomic(absolute, renderEntries(before.filter((content) => normalizeKey(content) !== key)));
 	if (!projectId.startsWith("device:")) {
+		// 墓碑存「语义内容」：导入时的拦截比较的是包内条目的语义内容（failure 已去掉 `[category]` 前缀），
+		// 存原始块会让 failure 的墓碑永远拦不住同一条。
 		addTombstone(root ?? resolveMemoryRoot(), {
 			target,
 			scope: projectId ? "project" : "global",
 			projectKey: projectId,
-			content: removed[0],
+			content: target === "failure" ? parseFailureEntry(removed[0]).content : removed[0],
 		});
 	}
 	return { removed: removed.length };
+}
+
+/**
+ * 撤销删除：把刚删的条目写回去，并回收对应的墓碑。
+ *
+ * 走主进程而不是渲染层分两步调：addMemory 与回收墓碑必须一起成怨，拆开会在中途失败时留下
+ * 「内容回来了但墓碑还在」（下次导入旧包会被误拦）或反过来。重复内容直接返回 restored:false
+ * （addMemory 的 duplicate 语义不报错，但那不是一次有效恢复）。
+ */
+export function restoreAgentMemoryEntry(root: string | undefined, input: { target: string; projectId?: string; content?: string; category?: string }): { restored: boolean } {
+	const target = input.target as AgentMemoryTarget;
+	if (!(target in TARGET_FILES)) throw new Error("target-invalid");
+	const content = typeof input.content === "string" ? input.content.trim() : "";
+	if (!content) throw new Error("entry-content-required");
+	const projectId = typeof input.projectId === "string" ? input.projectId : "";
+	const absolute = targetFilePath(root ?? resolveMemoryRoot(), target, projectId);
+	// 与 addMemory 的去重同一口径：failure 比较语义内容（去掉 `[category]` 前缀）。
+	const semanticOf = (block: string) => (target === "failure" ? parseFailureEntry(block).content : block);
+	const normalized = normalizeKey(semanticOf(content));
+	if (parseEntries(readRaw(absolute)).some((block) => normalizeKey(semanticOf(block)) === normalized)) return { restored: false };
+	if (target === "standing") {
+		// standing 不是模型写入目标（MEMORY_TARGETS 不含它），文件侧直接追加。
+		writeAtomic(absolute, renderEntries([...parseEntries(readRaw(absolute)), content]));
+		return { restored: true };
+	}
+	const isDevice = projectId.startsWith("device:");
+	// deleteEntry 的定位键视角（target + projectId）映射回 addMemory 的写入视角：
+	// 项目作用域的 memory → target=project；设备作用域 → target=device（键由机器档案派生，不传 projectId）。
+	const toolTarget = isDevice ? "device" : target === "memory" && projectId ? "project" : target;
+	const failure = target === "failure" ? parseFailureEntry(content) : undefined;
+	addMemory(root ?? resolveMemoryRoot(), {
+		target: toolTarget,
+		content: failure ? failure.content : content,
+		...(target === "failure" ? { category: failure?.category ?? (typeof input.category === "string" && input.category ? input.category : undefined) } : {}),
+		projectId: isDevice || target !== "memory" ? "" : projectId,
+	});
+	if (!isDevice) {
+		removeTombstone(root ?? resolveMemoryRoot(), {
+			target,
+			scope: projectId ? "project" : "global",
+			projectKey: projectId,
+			content: failure ? failure.content : content,
+		});
+	}
+	return { restored: true };
+}
+
+/* ───────────────────────── STANDING.md 的设置页编辑入口 ───────────────────────── */
+
+/**
+ * 读常驻指令原文。STANDING 不是工具写入 target（语义是「用户显式同意的常驻指令」，
+ * 不能让模型自己往里写），所以入口只开在设置页；这里读的就是文件本身。
+ */
+export function readStandingEntry(root: string | undefined): string {
+	if (!root) throw new Error("memory-disabled");
+	// writeStandingEntry 会在尾部补一个换行（文件格式），读回给编辑器时去掉，避免每次打开都「看似有改动」。
+	return readRaw(targetFilePath(root, "standing", "")).trimEnd();
+}
+
+/** 保存常驻指令原文：整文件替换 + 强制重同步索引。空串 = 清空。 */
+export function writeStandingEntry(root: string | undefined, content: string): { chars: number } {
+	if (!root) throw new Error("memory-disabled");
+	const normalized = content.replace(/\r\n/g, "\n").trim();
+	// 预算内的两倍余量交给裁剪逻辑没有必要——设置页是人工编辑，直接给硬上限挡手滑。
+	if (normalized.length > FILE_BUDGETS.standing.maxChars) throw new Error("standing-too-long");
+	if (normalized) writeAtomic(targetFilePath(root, "standing", ""), `${normalized}
+`);
+	else writeAtomic(targetFilePath(root, "standing", ""), "");
+	// 写路径绕过了 mutateEntries，mtime 短路必须强制穿透，否则索引还停在旧内容。
+	syncTarget(root, "standing", "", { force: true });
+	return { chars: normalized.length };
 }

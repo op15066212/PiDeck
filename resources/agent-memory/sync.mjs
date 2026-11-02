@@ -78,6 +78,20 @@ export function readDeviceProfile(root) {
 	return profile;
 }
 
+/**
+ * 重命名本机设备（导出包里的 device.name、设置页「本机」显示都跟着变）。
+ * id 永不改变：设备作用域的记忆落目录靠 id，改名不能让旧记忆失联。
+ * 档案不存在时先按既有规则生成一份再改名（与 readDeviceProfile 一致）。
+ * @returns {id, name} 改名后的设备档案
+ */
+export function renameDevice(root, name) {
+	const normalized = typeof name === "string" ? name.trim().slice(0, 60) : "";
+	if (!normalized) throw new Error("device-name-required");
+	const profile = readDeviceProfile(root);
+	writeAtomic(deviceProfilePath(root), `${JSON.stringify({ id: profile.id, name: normalized }, null, 2)}\n`);
+	return { id: profile.id, name: normalized };
+}
+
 /** 设备专属记忆的作用域 id（`device:<key>`），与项目作用域共用文件层。 */
 export function deviceScopeId(root) {
 	return `${DEVICE_SCOPE_PREFIX}${readDeviceProfile(root).id}`;
@@ -99,6 +113,15 @@ export function addTombstone(root, { target, scope, projectKey = "", content, at
 	const tombstones = readTombstones(root).filter((item) => !(item.key === key && item.target === target && item.scope === scope && item.projectKey === projectKey));
 	tombstones.push({ key, target, scope, projectKey, at });
 	writeAtomic(tombstonesPath(root), `${JSON.stringify(tombstones.slice(-MAX_TOMBSTONES), null, 2)}\n`);
+}
+
+/** 撤销删除时回收墓碑：同键的墓碑不回收，旧导出包会把刚恢复的条目再判成 tombstoned。 */
+export function removeTombstone(root, { target, scope, projectKey = "", content }) {
+	const key = normalizeKey(content);
+	if (!key) return;
+	const remaining = readTombstones(root).filter((item) => !(item.key === key && item.target === target && item.scope === scope && item.projectKey === projectKey));
+	if (remaining.length === readTombstones(root).length) return; // 没有同键墓碑，避免一次多余的写盘。
+	writeAtomic(tombstonesPath(root), `${JSON.stringify(remaining.slice(-MAX_TOMBSTONES), null, 2)}\n`);
 }
 
 function tombstoneIndex(tombstones) {

@@ -24,11 +24,21 @@ export interface AgentMemoryIpcDeps {
 	listEntries: () => AgentMemoryEntryList;
 	/** 删除单条记忆；写墓碑避免旧导出包把它导回来。 */
 	deleteEntry: (input: { target: string; projectId: string; key: string }) => { removed: number };
+	/** 撤销刚删的条目（写回内容并回收墓碑）。 */
+	restoreEntry: (input: { target: string; projectId: string; content: string; category?: string }) => { restored: boolean };
+	/** 在系统文件管理器里打开记忆根目录。 */
+	revealRoot: () => Promise<void>;
+	/** 读常驻指令（STANDING.md）原文；文件不存在返回空串。 */
+	readStanding: () => string;
+	/** 整文件替换常驻指令并重同步索引。 */
+	writeStanding: (content: string) => { chars: number };
+	/** 重命名本机设备（id 不变，只改导出包与状态区显示的名字）。 */
+	renameDevice: (name: string) => { id: string; name: string };
 	warn: (code: string) => void;
 }
 
 export function registerAgentMemoryIpc(deps: AgentMemoryIpcDeps): () => void {
-	const channels = [ipcChannels.agentMemoryStatus, ipcChannels.agentMemoryClearIndex, ipcChannels.agentMemoryExport, ipcChannels.agentMemoryPreview, ipcChannels.agentMemoryImport, ipcChannels.agentMemoryList, ipcChannels.agentMemoryDeleteEntry];
+	const channels = [ipcChannels.agentMemoryStatus, ipcChannels.agentMemoryClearIndex, ipcChannels.agentMemoryExport, ipcChannels.agentMemoryPreview, ipcChannels.agentMemoryImport, ipcChannels.agentMemoryList, ipcChannels.agentMemoryDeleteEntry, ipcChannels.agentMemoryRestoreEntry, ipcChannels.agentMemoryRevealRoot, ipcChannels.agentMemoryStandingRead, ipcChannels.agentMemoryStandingWrite, ipcChannels.agentMemoryRenameDevice];
 
 	/** 统一包成 `{ok,value}` / `{ok:false,code}`：渲染层不需要猜错误形态，异常码也不会带出本机路径。 */
 	async function result<T>(event: IpcMainInvokeEvent, run: () => Promise<T> | T): Promise<AgentMemoryResult<T>> {
@@ -92,6 +102,26 @@ export function registerAgentMemoryIpc(deps: AgentMemoryIpcDeps): () => void {
 	);
 
 	ipcMain.handle(ipcChannels.agentMemoryList, (event) => result(event, () => deps.listEntries()));
+	// 打开目录不接入参：路径由主进程从 userData 自己算，渲染层没有指哪打哪的能力。
+	// showItemInFolder 是 fire-and-forget，这里包成 Promise 让 result() 的信封仍然成立。
+	ipcMain.handle(ipcChannels.agentMemoryRevealRoot, (event) => result(event, () => deps.revealRoot()));
+	// STANDING 的读没有入参；写只收 {content}，长度受预算硬上限约束（4000，超限报 standing-too-long）。
+	ipcMain.handle(ipcChannels.agentMemoryStandingRead, (event) => result(event, () => deps.readStanding()));
+	ipcMain.handle(ipcChannels.agentMemoryStandingWrite, (event, input: unknown) =>
+		result(event, () => {
+			const value = typeof input === "object" && input !== null ? (input as Record<string, unknown>) : {};
+			const content = typeof value.content === "string" ? value.content : "";
+			if (content.length > 8000) throw new Error("invalid-input");
+			return deps.writeStanding(content);
+		}),
+	);
+	// 设备名只收短字符串；空名/超长在 sync.renameDevice 内部归一或抛错（device-name-required）。
+	ipcMain.handle(ipcChannels.agentMemoryRenameDevice, (event, name: unknown) =>
+		result(event, () => {
+			if (typeof name !== "string" || name.length > 200) throw new Error("invalid-input");
+			return deps.renameDevice(name);
+		}),
+	);
 	// 删除只接受「target + 作用域 + 内容键」三件套：渲染层拿不到文件路径，也就无法借这个通道
 	// 删到记忆目录之外的任何东西。键是规范化后的内容，最长 4000 字符（单条上限 2000 的两倍余量）。
 	ipcMain.handle(ipcChannels.agentMemoryDeleteEntry, (event, input: unknown) =>
@@ -102,6 +132,18 @@ export function registerAgentMemoryIpc(deps: AgentMemoryIpcDeps): () => void {
 			const key = typeof value.key === "string" ? value.key : "";
 			if (!target || !key || key.length > 4000 || projectId.length > 200) throw new Error("invalid-input");
 			return deps.deleteEntry({ target, projectId, key });
+		}),
+	);
+	// 撤销的入参校验与删除同源：内容受单条 2000 字上限的 2 倍约束（容 failure 前缀与空白）。
+	ipcMain.handle(ipcChannels.agentMemoryRestoreEntry, (event, input: unknown) =>
+		result(event, () => {
+			const value = typeof input === "object" && input !== null ? (input as Record<string, unknown>) : {};
+			const target = typeof value.target === "string" ? value.target : "";
+			const projectId = typeof value.projectId === "string" ? value.projectId : "";
+			const content = typeof value.content === "string" ? value.content : "";
+			const category = typeof value.category === "string" ? value.category : undefined;
+			if (!target || !content || content.length > 4000 || projectId.length > 200) throw new Error("invalid-input");
+			return deps.restoreEntry({ target, projectId, content, category });
 		}),
 	);
 

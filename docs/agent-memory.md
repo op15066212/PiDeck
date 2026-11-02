@@ -64,13 +64,13 @@
 |---|---|---|
 | pi | 写 `~/.pi/agent/mcp.json` 的 `pideck-agent-memory` 条目（`planPiMcpRegistration` 只增改自己那一项，`mcpServers` 形状不对就跳过而不是抢修覆盖；脚本不存在时不写悬空条目） | ✅ 已验证落盘 |
 | ACP | `AcpHandshakeDeps.mcpServers(cwd)` → `session/new` 与 `session/load` 的 `mcpServers`；`AcpMcpServer = {name,command,args?,env?}`；开关关闭时给空数组（该字段必填） | ✅ 类型检查 + 单测形态 |
-| DSH | 见 §5 | ⛔ 未接 |
+| DSH | 见 §5：工具面未接，**会话采集已接**（`backend:"dsh"`，zstd 帧 + 事件投影同一套口径） | ✅ 采集已验证 |
 
 环境变量（`AGENT_MEMORY_ENV` + 实际值）是服务器唯一的配置入口：
 
 - `PIDECK_AGENT_MEMORY_DIR`：记忆根（缺省时服务器**拒绝启动**——默认值会写到某个进程的 cwd 里，那是更坏的失败模式）
 - `PIDECK_AGENT_MEMORY_PROJECT_CWD`：会话 cwd，用于推导项目键
-- `PIDECK_AGENT_MEMORY_SOURCES`：会话采集源 JSON `[{backend:"pi"|"acp",dir,project?}]`，服务器自己不猜路径
+- `PIDECK_AGENT_MEMORY_SOURCES`：会话采集源 JSON `[{backend:"pi"|"acp"|"dsh",dir,project?}]`，服务器自己不猜路径
 
 ## 4.5 导出 / 导入：多设备共用
 
@@ -102,12 +102,13 @@
 独立的设置 tab（`AgentMemoryTab.tsx`，侧栏「基础」簇，terminal 之后），不再挤在「常用设置」里。分三块，正好对应三个问题：
 
 1. **开关**：启用 / 自动学习（主开关关着时学习项置灰）。
-2. **用量与索引**：状态行（各文件体积/条目数/索引规模/本机名字）+ 导出 / 导入 / 清空索引。清空索引只删 SQLite 里的行，记忆文件不动，下一次检索自动重建。
-3. **记忆条目**（`AgentMemoryEntryList.tsx`）：按「作用域 → 文件」逐条列出，可展开看全文、可按内容/项目名过滤、可删单条。分组头显示作用域（全局 / 项目名 / 本机设备）、条目数、字数与预算，答的是「为什么这条 DSH 会话看不到」——它可能落在项目或设备作用域里，只参与检索不参与每轮注入。
+2. **常驻指令**（`AgentMemoryStandingEditor.tsx`）：STANDING.md 的唯一写入口——它不是 Agent 工具的 target，语义是「用户显式同意、每条会话都注入」，模型改不了这里。保存立即生效（不等设置保存），超预算（4000 字）禁用保存。
+3. **用量与索引**：状态行（各文件体积/条目数/索引规模/本机名字）+ 导出 / 导入 / 重命名设备 / 清空索引。自动学习开着时多一行「上次学习」（学过的会话数与最近时间，来自 learn-state.json 的水位）。清空索引只删 SQLite 里的行，记忆文件不动，下一次检索自动重建。
+4. **记忆条目**（`AgentMemoryEntryList.tsx`）：按「作用域 → 文件」逐条列出，可展开看全文、可按内容/项目名过滤、可删单条（删后可**撤销**：写回内容并回收墓碑）。分组头显示作用域（全局 / 项目名 / 本机设备）、条目数、字数与预算，答的是「为什么这条 DSH 会话看不到」——它可能落在项目或设备作用域里，只参与检索不参与每轮注入。
 
 **能删不能改**：改写一条记忆的语义（去重键、预算裁剪、墓碑）都在工具层，设置页再放一个编辑器等于把那套规则抄第二遍；想改内容就让 Agent `memory_replace`，想改措辞就删掉再说一遍。删除与列表共用同一套内容规范化（`normalizeKey`），所以列表给的 `key` 一定能删掉它自己那一行——这条由 `tests/agentMemoryEntryList.test.mjs` 守着。全局/项目作用域的删除会写墓碑（旧导出包不会复活它），设备作用域不写（那类条目本来就不参与导出导入）。
 
-IPC：`agentMemory:status | clear-index | export | preview-bundle | import | list | delete-entry`（`src/main/ipc/agentMemoryIpc.ts`），只接受主框架来源、入参校验、错误以 `{ok:false,code}` 返回而不是抛。导出与导入都由弹窗发起：`export` 收勾选 id 数组，`import` 收 `{filePath, selection, conflictPolicy, applyTombstones}`，`preview-bundle` 只读返回包里每条的状态。
+IPC：`agentMemory:status | clear-index | export | preview-bundle | import | list | delete-entry | restore-entry | reveal-root | standing-read | standing-write | rename-device`（`src/main/ipc/agentMemoryIpc.ts`），只接受主框架来源、入参校验、错误以 `{ok:false,code}` 返回而不是抛。导出与导入都由弹窗发起：`export` 收勾选 id 数组，`import` 收 `{filePath, selection, conflictPolicy, applyTombstones}`，`preview-bundle` 只读返回包里每条的状态。
 
 ## 4.6 学习循环（宿主侧，默认关）
 
@@ -126,13 +127,13 @@ IPC：`agentMemory:status | clear-index | export | preview-bundle | import | lis
 - **不静默扩面**：单次最多 3 条、单会话每 12 轮一次，`runLearnerPass` 全局单飞（同时只跑一趟）。
 - **失败只进日志**：学习是可选增益，异常绝不影响会话（`catch` 只写 `agent-memory` 日志）。
 
-守卫测试（`tests/agentMemoryLearn.test.mjs`，8 条）：不足阈值一次都不调模型、达到阈值落盘并推水位、再跑不重复计费、模型失败不推水位（下次重试）、围栏可解/超量截断/坏 target 拒收、注入内容被工具层闸门拒收、重复条目计入 duplicate、未指定会话直接跳过。
+守卫测试（`tests/agentMemoryLearn.test.mjs`，9 条）：不足阈值一次都不调模型、达到阈值落盘并推水位、再跑不重复计费、模型失败不推水位（下次重试）、围栏可解/超量截断/坏 target 拒收、注入内容被工具层闸门拒收、重复条目计入 duplicate、未指定会话直接跳过、状态区汇总学习水位（sessions/lastAt）。
 
-## 5. DSH 为什么还没接
+## 5. DSH：采集已接，注入未做
 
-DSH 不走 MCP（`src/main/dsh/` 里没有 MCP 客户端），所以工具面进不去。可行的注入路径是它的 `dsh-agent-instructions` 插件的 `instructionFileCandidates`：宿主落一份 `AGENTS.memory.md` 到项目根的候选位置，DSH 自己读进上下文。
+**会话采集**：`backend:"dsh"` 与 pi/acp 走同一套 `indexSources`——`parseDshSessionLog` 认 `$DSH_HOME/sessions/<workspace>/<id>/session[.vN].jsonl[.zstd]`（同目录只采最新代，同代压缩件优先），zstd 按帧扫描逐帧解压（与 `dshForeignSessionScan` 同构：魔数 0xFD2FB528、单帧 8MiB 上限）。事件口径与 `dshEventProjector` 一致：真人 `user/message`（`source.kind` 缺失按真人，注入上下文跳过）、`assistant/message` 终态（chunk/delta 全跳过）；派生会话（subagent / 有 parent）不采。
 
-未做的原因：这等于给 DSH 造一条"记忆块文件"的新约定（还要处理候选优先级、`maxBytes` 截断、与用户自己的 `AGENTS.md` 冲突），且 DSH 自带 `session_query` 系列工具，会话采集也可以交给它自己。属于独立的一次交付，不塞进 M2。
+**工具面仍未接**：DSH 不走 MCP（`src/main/dsh/` 里没有 MCP 客户端），工具进不去。可行的注入路径是 `dsh-agent-instructions` 插件的 `instructionFileCandidates`：宿主落一份 `AGENTS.memory.md` 到项目根候选位置，DSH 自己读进上下文。未做的理由不变——这等于给 DSH 造一条"记忆块文件"的新约定（候选优先级、`maxBytes` 截断、与用户 `AGENTS.md` 的冲突），且 DSH 自带 `session_query` 系列工具。
 
 ## 6. 安全
 
@@ -150,14 +151,14 @@ node --test tests/agentMemoryMounts.test.mjs   # 挂载形态、mcp.json 合并/
 node --test tests/agentMemorySettings.test.mjs  # 开关默认关、非法入参、渲染层与主进程接线
 node --test tests/agentMemorySync.test.mjs     # 导出形状/勾选裁剪、预览五类状态、冲突策略、墓碑、设备作用域
 node --test tests/agentMemoryBundleDialogs.test.mjs # 导入导出必须先弹窗、勾选与策略一路传到主进程、词典键齐全
-node --test tests/agentMemoryEntryList.test.mjs # 条目浏览：列表 key 可删、只删一行、墓碑、非法入参
+node --test tests/agentMemoryEntryList.test.mjs # 条目浏览：列表 key 可删、只删一行、墓碑、撤销、STANDING 编辑、设备改名
 node --test tests/agentMemoryLearn.test.mjs    # 学习循环：水位、失败不推、闸门
 node --test tests/agentMemoryAcpE2E.test.mjs   # ACP 真进程：mcpServers 下发与工具调用
 node --test tests/zhTwCopy.test.mjs            # 改了 zh-CN 词典后必须重跑生成器
 npm run typecheck
 ```
 
-守卫测试固定的行为（含学习循环：不白调模型、失败不推水位、写入过扫描闸门）：重复写入幂等、目标隔离、写入扫描拒绝、替换/删除歧义报错、CJK 子串检索、target 过滤不漏、会话指纹未变时跳过、追加后整份重灌不重复、`system` 消息不入库、fork 会话共享消息 id 时两边都要入索引、`cwd` 必须能派生出项目键、mcp.json 损坏时不覆盖、打包/开发两态脚本路径、导出不含设备记忆、导入幂等且坏条目不断任务、墓碑双向传播、设备记忆可检索且不进包、记忆 tab 的条目清单给的 key 正好能删掉它自己那一行、预览不写盘、按勾选裁剪导入导出（`overwrite` 让旧版本真的消失）、关掉墓碑同步就不删本地条目。
+守卫测试固定的行为（含学习循环：不白调模型、失败不推水位、写入过扫描闸门）：重复写入幂等、目标隔离、写入扫描拒绝、替换/删除歧义报错、CJK 子串检索、target 过滤不漏、会话指纹未变时跳过、追加后整份重灌不重复、`system` 消息不入库、fork 会话共享消息 id 时两边都要入索引、`cwd` 必须能派生出项目键、mcp.json 损坏时不覆盖、打包/开发两态脚本路径、导出不含设备记忆、导入幂等且坏条目不断任务、墓碑双向传播、设备记忆可检索且不进包、记忆 tab 的条目清单给的 key 正好能删掉它自己那一行、预览不写盘、按勾选裁剪导入导出（`overwrite` 让旧版本真的消失）、关掉墓碑同步就不删本地条目、删除后的撤销会回收墓碑、STANDING 保存穿透 mtime 短路且超预算拒写、设备改名只动 name 不动 id、DSH 会话（多帧 zstd）与 pi/acp 同一套索引且派生会话不采。
 
 ## 8. 与 hermes 的差异
 
@@ -172,7 +173,6 @@ npm run typecheck
 ## 9. 剩余工作（按价值排序）
 
 1. **DSH 注入**（§5）：落 `AGENTS.memory.md` + 候选配置。DSH 没有 MCP 支持，工具面接不进去，只能走注入。
-2. **常驻指令 `STANDING.md` 的写入入口**：文件与预算已在，缺工具与 UI。
-3. **技能库**：hermes 的 `skill_manage` + 自动 consolidated；这是另一条产品线，学习循环目前只写记忆条目。
-4. **采集扩容**：DSH 会话、`imported` 会话（claude/qoder 等）的 JSONL 都能接同一套解析器，只需加 adapter。
-5. **远端同步**：导出包目前靠手动文件搬运。WebDAV/对象存储要新增外部副作用与凭据管理，先不做。
+2. **技能库**：hermes 的 `skill_manage` + 自动 consolidator；这是另一条产品线，学习循环目前只写记忆条目。
+3. **采集扩容**：`imported` 会话（claude/qoder 等）的 JSONL 都能接同一套解析器，只需加 adapter。
+4. **远端同步**：导出包目前靠手动文件搬运。WebDAV/对象存储要新增外部副作用与凭据管理，先不做。

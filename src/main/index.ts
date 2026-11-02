@@ -324,7 +324,8 @@ import { runLearnerPass } from "./agentMemory/agentMemoryLearner";
 import { resolveEnhanceTargetModel } from "../shared/enhanceModelPreference";
 import { syncAgentMemoryRegistration } from "./agentMemory/AgentMemoryMcpRegistration";
 import { clearAgentMemoryIndex, readAgentMemoryStatus } from "./agentMemory/agentMemoryStatus";
-import { deleteAgentMemoryEntry, readAgentMemoryEntries } from "./agentMemory/agentMemoryEntries";
+import { deleteAgentMemoryEntry, readAgentMemoryEntries, readStandingEntry, restoreAgentMemoryEntry, writeStandingEntry } from "./agentMemory/agentMemoryEntries";
+import { renameDevice } from "../../resources/agent-memory/sync.mjs";
 import { exportAgentMemoryBundle, importAgentMemoryBundle, previewAgentMemoryBundle } from "./agentMemory/agentMemoryBundle";
 import { registerAgentMemoryIpc } from "./ipc/agentMemoryIpc";
 import { AcpSessionArchive } from "./acp/AcpSessionArchive";
@@ -1602,6 +1603,9 @@ function createAgentMemoryMount(cwd?: string) {
 		appPath: app.getAppPath(),
 		resourcesPath: process.resourcesPath,
 		cwd,
+		// DSH 会话也进记忆索引（根会话才采）；dshHomeDir 设置为空时与 DshHost 同默认（~/.dsh）。
+		// settingsStore 未装配时（理论上不会，注册都发生在 whenReady 后）不挡 pi/ACP 采集。
+		dshSessionsDir: settingsStore ? join(resolveDshHomeDir(settingsStore.get().dshHomeDir ?? "", app.getPath("userData")), "sessions") : undefined,
 	});
 }
 
@@ -3925,6 +3929,19 @@ function registerIpc() {
 				projects: () => projectStore.list().map((project) => ({ name: project.name, path: "locator" in project ? project.locator.remotePath : project.path })),
 			}),
 		deleteEntry: (input) => deleteAgentMemoryEntry(agentMemoryRoot(), input),
+		restoreEntry: (input) => restoreAgentMemoryEntry(agentMemoryRoot(), input),
+		// 打开记忆根目录：showItemInFolder 是 fire-and-forget（Linux 上 openPath 会永不 settle，#396），
+		// 包一层 Promise 让信封形态保持一致；失败只告警，不让设置页弹错误。
+		revealRoot: async () => {
+			try {
+				shell.showItemInFolder(agentMemoryRoot());
+			} catch (error) {
+				mcpWarning(error instanceof Error ? error.message : String(error));
+			}
+		},
+		readStanding: () => readStandingEntry(agentMemoryRoot()),
+		writeStanding: (content) => writeStandingEntry(agentMemoryRoot(), content),
+		renameDevice: (name) => renameDevice(agentMemoryRoot(), name),
 		warn: mcpWarning,
 	});
 	quitCleanup.register("agent-memory-ipc", () => {
