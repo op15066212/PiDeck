@@ -293,7 +293,7 @@ export const ProcessGroupStep = memo(function ProcessGroupStep(props: ProcessGro
 								// 但外层会先判定滚动链归属：组内有余量时由内层认领，到边后 contain 切断，
 								// 两种情况都不能改变外层跟随态。
 								onWheel={(event) => stickNoteWheel(event.deltaY, event.target)}
-								className="flex max-h-[min(320px,30vh)] flex-col overflow-y-auto overscroll-contain"
+								className={`flex max-h-[min(320px,30vh)] flex-col overflow-y-auto overscroll-contain ${props.running ? "[scrollbar-width:none]" : ""}`}
 							>
 								{/* 内容包装盒：引擎的 ResizeObserver 观察这一层才能感知「内容变高」——
 						    外层 scroller 被 max-height 钳住、尺寸恒定，观察它收不到增长通知。 */}
