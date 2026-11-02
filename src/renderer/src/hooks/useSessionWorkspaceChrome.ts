@@ -7,6 +7,7 @@ import { buildSessionTabBarEntries, flattenSessionTabBarEntries, reorderSessionT
 import { buildSplitLayoutFromDrop, edgeToOrientation, insertRootPaneFromDrop, nestSplitPaneFromDrop, replaceSplitPaneFromDrop, resolveSplitAfterClose, resolveSplitHostSessionId, splitLayoutSessionIds, type SessionSplitDropTarget, type SessionSplitLayout } from "../utils/sessionSplitEdge";
 import { desktopApi } from "../desktopApi";
 import { buildSessionIdAliasMap, remapSessionIds } from "../../../shared/sessionIdAliases";
+import { isRendererVirtualSessionId } from "../../../shared/rendererVirtualSessionId";
 import type { FocusTargetPayload } from "../../../shared/types";
 
 const PINNED_TABS_STORAGE_KEY = "pideck.pinnedSessionTabIds";
@@ -33,7 +34,7 @@ export type SessionWorkspaceFocusHandlers = {
  */
 export function migrateAndPruneSessionTabIds(current: string[], aliases: ReadonlyMap<string, string>, sessionRecords: Readonly<Record<string, unknown>>, seenSessionIds: ReadonlySet<string>): string[] {
 	const remapped = remapSessionIds(current, aliases);
-	const next = remapped.filter((id) => !seenSessionIds.has(id) || Boolean(sessionRecords[id]));
+	const next = remapped.filter((id) => !isRendererVirtualSessionId(id) && (!seenSessionIds.has(id) || Boolean(sessionRecords[id])));
 	return remapped === current && next.length === current.length ? current : next;
 }
 
@@ -59,7 +60,7 @@ export function useSessionWorkspaceChrome(options: { currentSessionId: string | 
 		try {
 			const raw = localStorage.getItem(PINNED_TABS_STORAGE_KEY);
 			const parsed = raw ? JSON.parse(raw) : [];
-			return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === "string") : [];
+			return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === "string" && !isRendererVirtualSessionId(id)) : [];
 		} catch {
 			return [];
 		}
@@ -196,6 +197,7 @@ export function useSessionWorkspaceChrome(options: { currentSessionId: string | 
 	/** 在 App / 侧栏边界登记 Tab（preview / permanent）；与 selectSession 解耦 */
 	const registerOpenSession = useCallback(
 		(sessionId: string, mode: SessionTabOpenMode = "permanent") => {
+			if (isRendererVirtualSessionId(sessionId)) return;
 			const { tabs, pinned, previewId } = tabsSnapshotRef.current;
 			// 虚拟引导 Tab 只承载空态输入框；真实会话打开后替换它，不留下“未命名”空 Tab。
 			const tabsWithoutGuide = sessionId === GUIDE_BOOTSTRAP_SESSION_ID ? tabs : tabs.filter((id) => id !== GUIDE_BOOTSTRAP_SESSION_ID);
@@ -315,6 +317,7 @@ export function useSessionWorkspaceChrome(options: { currentSessionId: string | 
 
 	const togglePin = useCallback(
 		(sessionId: string) => {
+			if (isRendererVirtualSessionId(sessionId)) return;
 			const { tabs, pinned, previewId } = tabsSnapshotRef.current;
 			const next = togglePinSessionTab(tabs, pinned, sessionId);
 			setSessionTabIds(next.tabs);

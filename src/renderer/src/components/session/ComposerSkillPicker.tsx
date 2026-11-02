@@ -7,6 +7,7 @@ import { desktopApi } from "../../desktopApi";
 import { projectByIdAtomFamily } from "../../atoms";
 import type { AgentBackend, DshSkillView } from "../../../../shared/types";
 import { emptyProjectResourceDiscovery, type SkillCatalogEntry, mergePiSkillCatalog } from "../../../../shared/skillCatalog";
+import { isRendererVirtualSessionId } from "../../../../shared/rendererVirtualSessionId";
 import { CommandItem } from "../ui-shadcn/command";
 import { CommandPickerGroup } from "../ui-shadcn/command-picker";
 import { Button } from "../ui-shadcn/button";
@@ -60,7 +61,7 @@ export function ComposerSkillPicker(props: {
 	// DSH 没有运行中 agent 时也能读目录：主进程先扫描本地技能根（通用 SKILL.md 逻辑），
 	// 能拿到 host 权威列表时再做并集（preset/插件技能不漏）。引导页等虚拟会话 id
 	// （renderer: 前缀）没有 catalog 记录，仍走「启动后可读」提示。
-	const dshCatalogSessionId = props.backend === "dsh" && !props.agentId && props.sessionId && !props.sessionId.startsWith("renderer:") ? props.sessionId : undefined;
+	const dshCatalogSessionId = props.backend === "dsh" && !props.agentId && props.sessionId && !isRendererVirtualSessionId(props.sessionId) ? props.sessionId : undefined;
 
 	useEffect(() => {
 		if (props.backend === "dsh" && !props.agentId && !dshCatalogSessionId) {
