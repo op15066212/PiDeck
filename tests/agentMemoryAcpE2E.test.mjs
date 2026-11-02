@@ -71,9 +71,13 @@ test("ACP 真进程：session/new 的 mcpServers 能被 agent 起成 MCP 服务�
 	assert.equal(received.method, "session/new");
 	assert.equal(received.mcpServers.length, 1);
 	assert.equal(received.mcpServers[0].name, AGENT_MEMORY_SERVER_NAME);
-	// env 必须随挂载一起过去：服务器只认环境变量，缺一个就会拒绝启动或搜不到会话
-	assert.ok(received.mcpServers[0].env.PIDECK_AGENT_MEMORY_DIR, "缺少记忆根目录，服务器会拒绝启动");
-	assert.equal(received.mcpServers[0].env.PIDECK_AGENT_MEMORY_CWD, "C:\\work\\demo");
+	// env 必须随挂载一起过去：服务器只认环境变量，缺一个就会拒绝启动或搜不到会话。
+	// 线上形状是 ACP 的 EnvVariable[]（`{name, value}`），不是对象；这里解码后再断言。
+	const envPairs = received.mcpServers[0].env;
+	assert.ok(Array.isArray(envPairs), "env 必须是数组（对象会被真实 agent 拒成 -32602）");
+	const env = Object.fromEntries(envPairs.map((item) => [item.name, item.value]));
+	assert.ok(env.PIDECK_AGENT_MEMORY_DIR, "缺少记忆根目录，服务器会拒绝启动");
+	assert.equal(env.PIDECK_AGENT_MEMORY_CWD, "C:\\work\\demo");
 
 	const summary = received.summary[0];
 	assert.equal(summary.error, "", `服务器启动失败：${summary.error}`);

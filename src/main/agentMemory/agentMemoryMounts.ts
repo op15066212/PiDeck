@@ -104,9 +104,22 @@ export function sourcesOfMount(mount: AgentMemoryMount): AgentMemorySource[] {
 	}
 }
 
-/** ACP `session/new` / `session/load` 的 mcpServers 项（ACP v1 只有 stdio 形态）。 */
+/**
+ * ACP `session/new` / `session/load` 的 mcpServers 项（ACP v1 只有 stdio 形态）。
+ *
+ * env 必须落成 `{name, value}` 数组：ACP 的 `McpServerStdio.env` 是数组，直接传对象
+ * （`Record<string, string>`）会被 agent 的 schema 校验拒成 `-32602 Invalid params`，
+ * 而且 session/load 与回退的 session/new 会一起失败——ACP 会话直接起不来。
+ */
 export function buildAcpMcpServers(mount: AgentMemoryMount): AcpMcpServer[] {
-	return [{ name: AGENT_MEMORY_SERVER_NAME, command: mount.command, args: mount.args, env: mount.env }];
+	return [
+		{
+			name: AGENT_MEMORY_SERVER_NAME,
+			command: mount.command,
+			args: [...mount.args],
+			env: Object.entries(mount.env).map(([name, value]) => ({ name, value })),
+		},
+	];
 }
 
 /**

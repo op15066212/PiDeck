@@ -63,7 +63,7 @@
 | 后端 | 机制 | 状态 |
 |---|---|---|
 | pi | 写 `~/.pi/agent/mcp.json` 的 `pideck-agent-memory` 条目（`planPiMcpRegistration` 只增改自己那一项，`mcpServers` 形状不对就跳过而不是抢修覆盖；脚本不存在时不写悬空条目） | ✅ 已验证落盘 |
-| ACP | `AcpHandshakeDeps.mcpServers(cwd)` → `session/new` 与 `session/load` 的 `mcpServers`；`AcpMcpServer = {name,command,args?,env?}`；开关关闭时给空数组（该字段必填） | ✅ 类型检查 + 单测形态 |
+| ACP | `AcpHandshakeDeps.mcpServers(cwd)` → `session/new` 与 `session/load` 的 `mcpServers`；`AcpMcpServer = {name,command,args[],env[]}`（ACP 的 `McpServerStdio.env` 是 `{name,value}` **数组**，不是对象，四个字段全 required）；开关关闭时给空数组（该字段必填） | ✅ 真实 CLI 实测（CodeBuddy 2.179.2） |
 | DSH | 见 §5：工具面未接，**会话采集已接**（`backend:"dsh"`，zstd 帧 + 事件投影同一套口径） | ✅ 采集已验证 |
 
 环境变量（`AGENT_MEMORY_ENV` + 实际值）是服务器唯一的配置入口：
