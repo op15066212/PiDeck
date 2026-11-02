@@ -1024,11 +1024,9 @@ export function useSessionTimelineController(options: { sessionId?: string; mess
 			// autoScroll 为真时 useLayoutEffect 会走「跟底中」分支并 end。
 			return;
 		}
-		// 待扩量远超单帧预算：每条补页都会排一批，补到很早的历史可累计上百轮。
-		// 继续按帧小口消费，等于在一条 rAF 链上连发上百次 setState——React 的嵌套更新
-		// 上限是 50，超了直接抛 #185 把整窗打掉。这种量级一次性推开：多挂几十轮的开销
-		// 远小于崩溃。
-		const backlog = pendingExpandTurnsRef.current;
+		// 待扩量可能远超单帧预算：每条补页都会排一批，补到很早的历史可累计上百轮。
+		// 一律按 planWindowExpandBatch 切片（8 轮/帧）：既不卡单帧，也不会在一条 rAF
+		// 链上连发上百次 setState（旧实现在 backlog > 24 时一帧挂满整批，那一帧必掉）。
 		const batch = planWindowExpandBatch(pendingExpandTurnsRef.current);
 		pendingExpandTurnsRef.current -= batch;
 		// 轮数上限 = 已加载消息数：到顶就不再涨（封顶与不缩回的取舍见 windowExpandPlan）。

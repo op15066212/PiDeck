@@ -632,9 +632,9 @@ export function SessionMessageTimeline(props: SessionMessageTimelineProps) {
 	useLayoutEffect(() => {
 		const prev = turnWindowStateRef.current;
 		if (prev.windowed && prev.turns !== turnWindowTurns && !followingForTurnWindow) {
-			// 扩窗在顶部插入轮次：期间 controller 保持整表渲染（navBlockingVirtualization），
-			// 这一拍按钉住的行补齐位移。**关闭整表渲染不在这里**——它挂在「整批消费完」
-			// （controller 的 consumeExpandBatch），否则连点时每帧都关一次，状态机卡在 true。
+			// 扩窗在顶部插入轮次：这一拍按钉住的行补齐位移。
+			// 整表渲染的开关不在这里：扩窗本身**不打开**它（钉行由 pinnedRunKeys 强制挂载），
+			// 只有 scroll 翻页会打开（beginPrependSolid），由锚点消费点或请求 finally 关闭。
 			pinBrowseRow();
 		}
 		turnWindowStateRef.current = {
