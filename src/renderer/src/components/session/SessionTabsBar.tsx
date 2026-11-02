@@ -25,6 +25,7 @@ import type { SessionMenuRunControl } from "./SessionActionsMenu";
 import { SessionActivityIndicator } from "./SessionActivityIndicator";
 import { useFavorites } from "../../hooks/useFavorites";
 import { TAB_CLOSE_BUTTON_CLASS } from "../../utils/tabCloseButton";
+import { handleTabActivationKeys, isTabCloseActivationKey } from "../../utils/tabActivationKeys";
 
 import { SESSION_TAB_DRAG_MIME } from "../../utils/sessionSplitEdge";
 import { buildSessionTabBarEntries, flattenSessionTabBarEntries, GROUP_COLOR_VALUES } from "../../utils/sessionTabGroups";
@@ -36,6 +37,18 @@ import { SESSION_TAB_BADGE_EXTRA_WIDTH } from "../../../../shared/sessionTabWidt
  * 第一个为默认色，与 SPLIT_GROUP_DEFAULT_COLOR 保持一致；labelKey 走 i18n。
  */
 const SPLIT_GROUP_COLOR_NAMES = ["blue", "green", "yellow", "orange", "red", "purple", "pink", "gray"] as const;
+
+/**
+ * Tab 本体的键盘焦点环：画在整颗胶囊上（含关闭钮），因为 tab 与关闭钮是同级节点，
+ * 任何一个拿到键盘焦点都该让整颗 Tab 亮起来。
+ *
+ * `focus-visible:*` 负责焦点落在 Tab 本体：`:has(:focus-visible)` 只匹配「有后代被聚焦」，
+ * 匹配不到自己，两者必须都写。`focus-visible:outline-none` 由关闭钮自己抵消
+ * foundation.css legacy 层的 button 黑色外环，避免双环。
+ */
+const TAB_KEYBOARD_FOCUS_CLASS = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-ring";
+/** Tab 关闭钮的键盘可见性：焦点到它就直接显形，不用先 hover。 */
+const TAB_CLOSE_KEYBOARD_CLASS = "focus-visible:opacity-100 focus-visible:outline-none";
 
 /**
  * 色值来源是 utils/sessionTabGroups 的 GROUP_COLOR_VALUES（项目分组与分屏组共用同一套）。
@@ -481,8 +494,18 @@ export function SessionTabsBar(props: SessionTabsBarProps) {
 					<PanelLeft className="size-3.5" aria-hidden="true" />
 				</Button>
 			) : null}
-			<div className="relative flex min-w-0 flex-1 items-center">
-				<div ref={scrollRef} className="session-tabs-scroll relative flex h-full min-w-0 flex-1 items-center gap-1 overflow-x-auto overflow-y-hidden [scrollbar-width:none]" onDragOver={handleTabsDragOver} onDragLeave={handleTabsDragLeave} onDrop={handleDrop}>
+			{/* h-full 不是为了排版：Tab 的键盘焦点环画在胶囊外侧（2px 宽 + 2px 偏移），
+			   滚动容器的裁剪盒必须比 Tab 高，否则上下两段环被切掉、只剩左右两条竖线。 */}
+			<div className="relative flex h-full min-w-0 flex-1 items-center">
+				<div
+					ref={scrollRef}
+					/* -mx-1 px-1：Tab 的焦点环画在胶囊外侧 4px，滚动容器的裁剪盒要留出这段余量，
+					   否则第一个/最后一个 Tab 的环被切成半截（负外边距把 4px 内距「还」回去，Tab 位置不变）。 */
+					className="session-tabs-scroll relative -mx-1 flex h-full min-w-0 flex-1 items-center gap-1 overflow-x-auto overflow-y-hidden px-1 [scrollbar-width:none]"
+					onDragOver={handleTabsDragOver}
+					onDragLeave={handleTabsDragLeave}
+					onDrop={handleDrop}
+				>
 					{(() => {
 						// 分屏组：组内会话聚合渲染（组头胶囊 + 颜色标记）；收起时组内 Tab 隐藏
 						const hasSplitGroup = tabBarEntries.some((entry) => entry.kind === "split");
@@ -738,6 +761,7 @@ function EditorWorkbenchTab(props: { tab: WorkbenchEditorTabItem; onSelect?: (ta
 					className={cn(
 						// 显式标明 length 只设字号、不带行高（行高紧随其后用 leading-(--line-height-tab)）。
 						"session-tab group relative flex h-7 shrink-0 cursor-pointer select-none items-center rounded-md border px-2 text-[length:var(--font-size-tab)] leading-(--line-height-tab) transition-[color,background-color,border-color,box-shadow,transform] duration-base",
+						TAB_KEYBOARD_FOCUS_CLASS,
 						// 工作台文件/Diff Tab 宽度上限跟随外观设置（--session-tab-max-w 由 SessionTabsBar 根注入），
 						// 与会话 Tab 统一宽度来源，不再保留旧固定值。
 						"w-fit max-w-(--session-tab-max-w)",
@@ -751,12 +775,7 @@ function EditorWorkbenchTab(props: { tab: WorkbenchEditorTabItem; onSelect?: (ta
 					onDoubleClick={() => {
 						if (tab.preview) props.onPromotePreview?.(tab.id);
 					}}
-					onKeyDown={(event) => {
-						if (event.key === "Enter" || event.key === " ") {
-							event.preventDefault();
-							props.onSelect?.(tab.id);
-						}
-					}}
+					onKeyDown={(event) => handleTabActivationKeys(event, { canClose: true, onSelect: () => props.onSelect?.(tab.id), onClose: () => props.onClose?.(tab.id) })}
 					tabIndex={0}
 				>
 					<span className="relative z-10 flex min-w-0 flex-1 items-center gap-1.5">
@@ -764,9 +783,12 @@ function EditorWorkbenchTab(props: { tab: WorkbenchEditorTabItem; onSelect?: (ta
 						<button
 							type="button"
 							role="tab-close"
-							aria-label={t("tabs.close")}
+							aria-label={`${t("tabs.close")} ${tab.label}`}
 							title={t("tabs.close")}
-							className={cn(TAB_CLOSE_BUTTON_CLASS, tab.active ? "opacity-70 hover:opacity-100" : "opacity-0 group-hover:opacity-70")}
+							className={cn(TAB_CLOSE_BUTTON_CLASS, TAB_CLOSE_KEYBOARD_CLASS, tab.active ? "opacity-70 hover:opacity-100" : "opacity-0 group-hover:opacity-70 group-focus-within:opacity-70")}
+							onKeyDown={(event) => {
+								if (isTabCloseActivationKey(event.key)) event.stopPropagation();
+							}}
 							onClick={(event) => {
 								event.stopPropagation();
 								props.onClose?.(tab.id);
@@ -809,8 +831,11 @@ function HostPluginTab(props: { tab: { title: string; icon?: React.ComponentType
 			role="tab"
 			aria-selected={true}
 			aria-label={tab.title}
+			tabIndex={0}
+			onKeyDown={(event) => handleTabActivationKeys(event, { canClose: true, onSelect: () => {}, onClose: tab.onClose })}
 			className={cn(
 				"session-tab group relative flex h-7 shrink-0 cursor-pointer select-none items-center rounded-md border border-transparent px-2 font-medium text-foreground text-[length:var(--font-size-tab)] leading-(--line-height-tab) transition-[color,background-color,border-color,box-shadow,transform] duration-base",
+				TAB_KEYBOARD_FOCUS_CLASS,
 				"w-fit max-w-(--session-tab-max-w)",
 			)}
 		>
@@ -820,9 +845,12 @@ function HostPluginTab(props: { tab: { title: string; icon?: React.ComponentType
 				<button
 					type="button"
 					role="tab-close"
-					aria-label={t("tabs.close")}
+					aria-label={`${t("tabs.close")} ${tab.title}`}
 					title={t("tabs.close")}
-					className={cn(TAB_CLOSE_BUTTON_CLASS, "opacity-70 hover:opacity-100")}
+					className={cn(TAB_CLOSE_BUTTON_CLASS, TAB_CLOSE_KEYBOARD_CLASS, "opacity-70 hover:opacity-100")}
+					onKeyDown={(event) => {
+						if (isTabCloseActivationKey(event.key)) event.stopPropagation();
+					}}
 					onClick={(event) => {
 						event.stopPropagation();
 						tab.onClose();
@@ -855,16 +883,12 @@ function WorkspacePageTab(props: { tab: WorkspacePageTabItem }) {
 			tabIndex={0}
 			className={cn(
 				"session-tab group relative flex h-7 shrink-0 cursor-pointer select-none items-center rounded-md border border-transparent px-2 text-[length:var(--font-size-tab)] leading-(--line-height-tab) transition-[color,background-color,border-color,box-shadow,transform] duration-base",
+				TAB_KEYBOARD_FOCUS_CLASS,
 				"w-fit max-w-(--session-tab-max-w)",
 				tab.active ? "font-medium text-foreground" : "text-muted-foreground hover:-translate-y-px hover:bg-accent-soft hover:text-foreground",
 			)}
 			onClick={tab.onSelect}
-			onKeyDown={(event) => {
-				if (event.key === "Enter" || event.key === " ") {
-					event.preventDefault();
-					tab.onSelect();
-				}
-			}}
+			onKeyDown={(event) => handleTabActivationKeys(event, { canClose: true, onSelect: () => tab.onSelect(), onClose: () => tab.onClose() })}
 		>
 			<span className="relative z-10 flex min-w-0 flex-1 items-center gap-1.5">
 				{Icon ? <Icon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" /> : null}
@@ -872,9 +896,12 @@ function WorkspacePageTab(props: { tab: WorkspacePageTabItem }) {
 				<button
 					type="button"
 					role="tab-close"
-					aria-label={t("tabs.close")}
+					aria-label={`${t("tabs.close")} ${tab.title}`}
 					title={t("tabs.close")}
-					className={cn("inline-grid size-4 shrink-0 place-items-center rounded-sm text-muted-foreground/70 transition-[color,background-color,opacity] hover:bg-accent hover:text-foreground", tab.active ? "opacity-60 hover:opacity-100" : "opacity-0 group-hover:opacity-60")}
+					className={cn(TAB_CLOSE_BUTTON_CLASS, TAB_CLOSE_KEYBOARD_CLASS, tab.active ? "opacity-70 hover:opacity-100" : "opacity-0 group-hover:opacity-70 group-focus-within:opacity-70")}
+					onKeyDown={(event) => {
+						if (isTabCloseActivationKey(event.key)) event.stopPropagation();
+					}}
 					onClick={(event) => {
 						event.stopPropagation();
 						tab.onClose();
@@ -1081,9 +1108,12 @@ function SessionTab(props: {
 								// 中键关闭（固定 Tab 忽略，需先取消固定），与浏览器 Tab 行为一致
 								if (event.button === 1 && !pinned) close();
 							}}
+							onKeyDown={(event) => handleTabActivationKeys(event, { canClose: !pinned, onSelect: select, onClose: close })}
+							tabIndex={0}
 							className={cn(
 								// 与文件 Tab 一样标明字号类型，防 cn 将字号当颜色删掉；仍消费设置 token。
 								"session-tab group relative flex h-7 shrink-0 cursor-pointer select-none items-center rounded-md border px-2 text-[length:var(--font-size-tab)] leading-(--line-height-tab) transition-[color,background-color,border-color,box-shadow,transform] duration-base",
+								TAB_KEYBOARD_FOCUS_CLASS,
 								// 固定 Tab 与普通 Tab 同宽策略（按内容收缩）：固定 Tab 无关闭按钮，
 								// hover 不会因按钮出现而跳动，无需 w-20 占位；固定宽度反而让 Pin 图标挤占标题空间。
 								// 有 DSH/生图徽标或模式 chip 时放宽上限：基础上限 + 徽标预留 28px
@@ -1151,9 +1181,12 @@ function SessionTab(props: {
 									<button
 										type="button"
 										role="tab-close"
-										aria-label={t("tabs.close")}
+										aria-label={`${t("tabs.close")} ${title}`}
 										title={t("tabs.close")}
-										className={cn(TAB_CLOSE_BUTTON_CLASS, active ? "opacity-70 hover:opacity-100" : "opacity-0 group-hover:opacity-70")}
+										className={cn(TAB_CLOSE_BUTTON_CLASS, TAB_CLOSE_KEYBOARD_CLASS, active ? "opacity-70 hover:opacity-100" : "opacity-0 group-hover:opacity-70 group-focus-within:opacity-70")}
+										onKeyDown={(event) => {
+											if (isTabCloseActivationKey(event.key)) event.stopPropagation();
+										}}
 										onClick={(event) => {
 											event.stopPropagation();
 											close();
