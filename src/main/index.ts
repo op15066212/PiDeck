@@ -389,6 +389,7 @@ import { DirectorySessionImporter } from "./sessions/DirectorySessionImporter";
 import { normalizeSessionPathKey } from "./sessions/directorySessionImport";
 import { SettingsStore } from "./settings/SettingsStore";
 import { SecurityStore } from "./security/SecurityStore";
+import { evaluateUserReadAccess } from "./security/policy";
 import { applyDesktopProxy } from "./settings/DesktopProxy";
 import { GitService } from "./git/GitService";
 import { GitRefsWatcher } from "./git/GitRefsWatcher";
@@ -6688,6 +6689,9 @@ app
 			files: {
 				listTree: (root, maxDepth, directory) => fileSystemService.listTree(root, maxDepth, directory),
 			},
+			// Web 端预览项目外文件时的用户意图门：与桌面端「项目外文件链接」同一套安全等级规则
+			// （denyDirs > 敏感文件 > 目录边界），ask 由 Web 端弹「只读查看」确认后再带 confirm=1 重请求。
+			userReadAccess: (input) => evaluateUserReadAccess(securityStore.getConfig(), input),
 			// 提示词库只在 SQLite 库可用时注入（缺库时路由返回 503，前端隐藏入口）
 			prompts: xuePromptManager
 				? {
