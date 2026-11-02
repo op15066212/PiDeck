@@ -51,6 +51,18 @@ export function loadTsCommonJs(filePath, options = {}) {
 			if (specifier.startsWith(".") || specifier.startsWith("/")) {
 				return load(resolveLocalModule(absolutePath, specifier));
 			}
+			// renderer 的 bundler 别名（electron.vite.config.ts 的 resolve.alias）：ui-shadcn 原语
+			// 统一写 `@/lib/utils`，Node 解析不到，也不该为测试去改生产 import。
+			for (const [prefix, root] of [
+				["@renderer/", "src/renderer/src/"],
+				["@shared/", "src/shared/"],
+				["@/", "src/renderer/src/"],
+			]) {
+				if (!specifier.startsWith(prefix)) continue;
+				// resolveLocalModule 以「调用方（生产文件）」的目录名为基准，这里用 cwd 下的假文件充当它。
+				const aliased = resolveLocalModule(resolve(process.cwd(), "index.js"), root + specifier.slice(prefix.length));
+				if (aliased) return load(aliased);
+			}
 			// 项目根相对导入（"src/shared/..."，bundler root 语义）：node 解析不到、
 			// 也不是包名。npm test 以项目根为 cwd，先按项目根解析本地 TS 文件；
 			// 解析不到（node_modules 包）再回退 npm require。
