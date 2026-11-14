@@ -30,7 +30,8 @@ description: "用 PiDeck 自带的 HTTP 服务读自己的状态、给别的窗�
 
 - **会话**：PiDeck 侧边栏里的一行。会话可以存在，但此刻没在跑。
 - **运行时**：为某个会话在后台跑的那个 pi 进程。会话是记录，运行时是进程。
-- **运行时代号**（`runtimeGeneration`）：每起来一次加一。进程号不对外暴露，所以「代号变了」是「真的换了进程」的证据。`agentId` 也会跟着换，两个标一个意思，看哪个都行。
+- **运行时代号**（`runtimeGeneration`）：同一个会话每起动一次进程，这个数字加一。它不是操作系统说的 PID（进程号），那个不对外暴露。所以「代号从 3 变成 4」等于「这个会话换了一个进程」。
+- **`agentId`**：服务端每次起进程时新发的一个 uuid，和上一条总是一起变。两个都在 `runtimes[]` 里，验「有没有真换进程」看哪个都行。
 
 ## 2 连上：地址、令牌、自己的会话 id
 
@@ -101,7 +102,12 @@ curl -s -H "$AUTH" "$BASE/api/sessions/$PIDECK_SESSION_ID/todo"         # 我的
 curl -s -H "$AUTH" "$BASE/api/sessions/$PIDECK_SESSION_ID/subagents"    # 我派了几个子 agent
 ```
 
-`/messages` 返回 `{messages, total, windowStart, truncated}`，**是有界窗口不是全部历史**。看到 `truncated: true` 说明还有更早的。
+`/messages` 返回 `{messages, total, windowStart, truncated}`，**是有界窗口不是全部历史**：
+
+- `messages` 按时间**从旧到新**排，最后一条是最新的。要末尾 N 条就 `messages.slice(-N)`。
+- `total` 是这个会话一共多少条；`messages` 里只有其中一截。
+- `windowStart` 是这一截的第一条在整个会话里的序号（从 0 数）。`windowStart: 0` 表示从最早那条开始，也就是没截断。
+- `truncated: true` 表示还有更早的没拿到，翻页用下面那个端点。
 
 **`/messages` 本身不吃 `?before`。** 实测传 `?before=5516`、`?before=999999`、`?before=abc`，返回的 `windowStart` 和条数与不传时完全相同。翻更早的历史用另一个端点：
 
