@@ -5,7 +5,7 @@ description: "用 PiDeck 的 HTTP 服务读自己的状态、给别的窗口发�
 
 # PiDeck Web API
 
-**PiDeck 每个窗口背后跑一个 pi 进程，同时开一个只监听本机的 HTTP 服务。用这个服务，你能读自己的状态、给别的窗口发消息、让另一个会话把自己重启。**
+**PiDeck 每个窗口背后跑一个 pi 进程，同时开一个只监听本机的 HTTP 服务——于是「窗口里发生的事」与「一条 HTTP 请求」之间有了一条双向映射：读它（状态、历史）是一个方向，改它（发消息、重启）是另一个方向。本技能讲的是这两个方向各有哪些端点，以及**每个改方向的端点能退回到哪一步**。**
 
 下面每条命令都在 2026-11 的 Windows 发行版上跑过，写了期望返回。返回形状不符说明版本变了，以源码 `src/main/web/WebApiRoutes.ts` 为准（`/api/health` 例外，在 `WebServiceManager.ts:497`）。技能本身不依赖源码，只有想确认「这个端点源码里到底怎么写的」时才需要克隆。
 
@@ -43,14 +43,19 @@ description: "用 PiDeck 的 HTTP 服务读自己的状态、给别的窗口发�
 
 **第一步不是问「你读过技能吗」，是假定它没读过，把要它做的事连同做这件事需要的全部命令一次贴全。** 问一轮要一分钟，贴全只要十秒；而且它答「读过」你也无法验证——那正是子非鱼。
 
-## 1 几个词
+## 1 几个词：每个都是一对映射的两端
 
-- **会话**：PiDeck 侧边栏里的一行。会话可以存在，但此刻没在跑。
-- **运行时**：为某个会话在后台跑的那个 pi 进程。会话是记录，运行时是进程。
-- **运行时代号**（`runtimeGeneration`）与 `agentId`：同一会话每起一次进程，代号加一，服务端同时发一个新的 `agentId` uuid。两个一起变，都在 `runtimes[]` 里，验「换没换进程」看哪个都行。
-- 代号不是操作系统的 PID，那个不对外暴露。这两个字段都要传当前值：多数命令传错直接拒，唯独 `stop` 只认 `agentId`（两种语义的分界见 7.1）。
-- **判据**：某一项能返回真假的检查，例如「发一条 ping，没有 error 帧就是送到了」。
-- **口径**：一条判据管到哪为止。口径之外它给不出答案，不是它判错了。
+不写「它是什么」，写「它从哪来、映到什么」——混了哪一端，就会拿一端已经丢掉的信息去答另一端。
+
+| 词 | 它把什么映到什么 | 它答不了什么 |
+|---|---|---|
+| **会话**（`sessions[]`） | 磁盘上的记录 → 一行。可以存在而进程不在 | 「此刻在不在跑」 |
+| **运行时**（`runtimes[]`） | 会话 → 0 或 1 个进程；这个数组就是值表 | 「它说过什么」 |
+| `runtimeGeneration` / `agentId` | 进程 → 标识：每起一次进程代号 +1，同时发新 uuid，两个一起变 | 操作系统 PID——那个不对外 |
+| **判据** | 状态 → 真/假，一个可执行映射 | 口径之外的事，出界不等于假 |
+| **口径** | 判据定义域的子集：它管到哪为止 | 出界不是判据判错了 |
+
+**验「换没换进程」，看 `runtimeGeneration` 或 `agentId` 哪个都行；后者会过期。** 隔着几分钟拿旧 `agentId` 请求，先撞的是 sessionId↔agentId 绑定对不上（`SESSION_RUNTIME_UNAVAILABLE`）——看起来像会话没了，其实是身份过期。两个字段都要传当前值：多数命令传错直接拒，唯独 `stop` 只认 `agentId`（两种语义的分界见 7.1）。
 
 ## 2 连上：地址、令牌、自己的会话 id
 
@@ -379,29 +384,29 @@ curl -s -X POST -H "$AUTH" -H "Content-Type: application/json" -d '{}' \
 
 全部动作，从源码 `WebApiRoutes.ts` 的路由正则逐条抄出：
 
-| action | 额外 body 字段 | 作用 |
-|---|---|---|
-| `activate` | 无（body 传 `{}`） | 冷会话拉起进程 |
-| `stop` | — | 停进程，会话记录留着 |
-| `abort` | — | 只中止当前回合，进程留着 |
-| `restart` | — | 停完接着启；等待期间每 2 秒回一次心跳 |
-| `compact` | `prompt?` | 压缩上下文 |
-| `state` | — | 读运行时状态 |
-| `commands` | — | 列该运行时的命令 |
-| `models` | — | 列可用模型 |
-| `model` | `provider` `modelId` `modelName?` | 给活着的进程换模型 |
-| `thinking` | `level` | 换思考档 |
-| `permission` | `preset` | 换权限预设 |
-| `edit-message` | `messageId` `newText` | 改历史里某条消息 |
-| `delete-message` | `messageId` | 删历史里某条消息 |
-| `prepare-resend` | `messageId` | 准备重发 |
-| `clone` | — | 克隆运行时 |
-| `fork` | `entryId` `mutationFork?` `branchMode?` | 从某一轮分叉出新会话 |
-| `get-fork-messages` | — | 分叉点候选消息 |
-| `rewind-list` | `limit?` `beforeTimestamp?` | 检查点列表，可翻页 |
-| `rewind-diff` | `checkpointId` | 某个检查点改了什么 |
-| `rewind-restore` | `checkpointId` `scope` | 回滚到某检查点 |
-| `export-html` | — | 导出成 HTML |
+| action | 额外 body 字段 | 作用 | 回得去吗 |
+|---|---|---|---|
+| `activate` | 无（body 传 `{}`） | 冷会话拉起进程 | `stop` |
+| `stop` | — | 停进程，会话记录留着 | `activate`，但上下文已丢 |
+| `abort` | — | 只中止当前回合，进程留着 | **回不去**（回合已断） |
+| `restart` | — | 停完接着启；等待期间每 2 秒回一次心跳 | **回不去** |
+| `compact` | `prompt?` | 压缩上下文 | **回不去**（上下文已压） |
+| `state` | — | 读运行时状态 | 读，无副作用 |
+| `commands` | — | 列该运行时的命令 | 读，无副作用 |
+| `models` | — | 列可用模型 | 读，无副作用 |
+| `model` | `provider` `modelId` `modelName?` | 给活着的进程换模型 | 换回原模型，但 `thinking` 已被重置 |
+| `thinking` | `level` | 换思考档 | 换回 |
+| `permission` | `preset` | 换权限预设 | 换回 |
+| `edit-message` | `messageId` `newText` | 改历史里某条消息 | 再改一次（旧文只在历史里） |
+| `delete-message` | `messageId` | 删历史里某条消息 | **回不去** |
+| `prepare-resend` | `messageId` | 准备重发 | 无副作用 |
+| `clone` | — | 克隆运行时 | 删掉克隆 |
+| `fork` | `entryId` `mutationFork?` `branchMode?` | 从某一轮分叉出新会话 | 删掉分叉 |
+| `get-fork-messages` | — | 分叉点候选消息 | 读，无副作用 |
+| `rewind-list` | `limit?` `beforeTimestamp?` | 检查点列表，可翻页 | 读，无副作用 |
+| `rewind-diff` | `checkpointId` | 某个检查点改了什么 | 读，无副作用 |
+| `rewind-restore` | `checkpointId` `scope` | 回滚到某检查点 | **回不去**（除非回滚前已有检查点） |
+| `export-html` | — | 导出成 HTML | 写文件，不改状态 |
 
 `activate` 是唯一不要 target 的——它要做的正是「这个冷会话现在起来」，没有 target 可回传。其余都要 `body.target.sessionId` 与路径里的 id 完全相同，不一致返回 400 `webError.runtimeTargetRequired`。
 
