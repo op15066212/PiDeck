@@ -26,10 +26,14 @@ export function isSelftest(list = process.argv.slice(2)) {
   return list.includes("--selftest");
 }
 
+// 两个会承载路由的源文件。名字只在这里出现：改文件名要改一处。
+export const ROUTES_REL = "web/WebApiRoutes.ts";
+export const MANAGER_REL = "web/WebServiceManager.ts";
+
 /** 两种布局都认：src/web/... 与 src/main/web/...。返回真正的 src 根。 */
 export function pickBase(base) {
-  if (fs.existsSync(path.join(base, "web/WebApiRoutes.ts"))) return base;
-  if (fs.existsSync(path.join(base, "main/web/WebApiRoutes.ts"))) return path.join(base, "main");
+  if (fs.existsSync(path.join(base, ROUTES_REL))) return base;
+  if (fs.existsSync(path.join(base, "main", ROUTES_REL))) return path.join(base, "main");
   return base;
 }
 
@@ -46,7 +50,7 @@ export function skillFile(here, list = process.argv.slice(2)) {
 
 /** 两个会承载路由的源文件，存在的才算。 */
 export function routeFiles(base) {
-  return ["web/WebApiRoutes.ts", "web/WebServiceManager.ts"]
+  return [ROUTES_REL, MANAGER_REL]
     .map((rel) => path.join(base, rel))
     .filter((f) => fs.existsSync(f));
 }

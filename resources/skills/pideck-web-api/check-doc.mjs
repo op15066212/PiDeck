@@ -9,7 +9,7 @@
 // 参数：--update-routes 重写路由台账 check-doc-routes.json（改了源码路由之后跑一次）。
 import fs from "node:fs";
 import path from "node:path";
-import { srcBase, skillFile } from "./_cli.mjs";
+import { srcBase, skillFile, ROUTES_REL, MANAGER_REL } from "./_cli.mjs";
 import { fileURLToPath } from "node:url";
 
 // 必须先跑：变异 compareActions 时第一行就要红，不能让统计行先打印。
@@ -30,8 +30,8 @@ if (process.argv.includes("--selftest")) {
 }
 // 约定与源码定位在本目录的 _cli.mjs（技能自包含：只引用同目录的文件）。
 const SRC_BASE = srcBase(here);
-const SRC = path.join(SRC_BASE, "web/WebApiRoutes.ts");
-const EXTRA = path.join(SRC_BASE, "web/WebServiceManager.ts");
+const SRC = path.join(SRC_BASE, ROUTES_REL);
+const EXTRA = path.join(SRC_BASE, MANAGER_REL);
 const SKILL = skillFile(here);
 if (!fs.existsSync(SRC)) { console.log("FAIL 找不到源码 " + SRC + "（用 --src= 指向完整 src 目录）；这是环境缺失，rc=2"); process.exit(2); }
 const skill = fs.readFileSync(SKILL, "utf8");

@@ -14,7 +14,7 @@
 // 只有技能副本，那里「判据自己还对不对」没法验证——判据坏了和判据不存在，后果相同。
 import fs from "node:fs";
 import path from "node:path";
-import { srcBase, skillFile } from "./_cli.mjs";
+import { srcBase, skillFile, ROUTES_REL, MANAGER_REL } from "./_cli.mjs";
 import { fileURLToPath } from "node:url";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -101,8 +101,8 @@ if (process.argv.includes("--selftest")) selftest();
 // 约定与源码定位在本目录的 _cli.mjs。
 const SRC_BASE = srcBase(here);
 const SKILL = skillFile(here);
-const SRC = path.join(SRC_BASE, "web/WebApiRoutes.ts");
-const srcFiles = [SRC, path.join(SRC_BASE, "web/WebServiceManager.ts")].filter((f) => fs.existsSync(f));
+const SRC = path.join(SRC_BASE, ROUTES_REL);
+const srcFiles = [SRC, path.join(SRC_BASE, MANAGER_REL)].filter((f) => fs.existsSync(f));
 if (!srcFiles.length) { console.log("FAIL 找不到源码（找过 " + SRC + "）。用 --src= 指向完整 src 目录，或用 --selftest 只验判据自己"); process.exit(2); }
 const src = srcFiles.map((p) => fs.readFileSync(p, "utf8")).join(String.fromCharCode(10)).split(BS + "/").join("/");
 
