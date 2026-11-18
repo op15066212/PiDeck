@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "version": "1.0.0",
-  "bundleSha256": "3bb140246208b622bb7788b3448216bdeaece4093c6b1d97e404e84e412b8a98",
+  "bundleSha256": "b518361f18960e9f1054f2e6947ee38ca92031abc524b96497b19ddebe8555c4",
   "fileCount": 12,
   "files": [
     {
@@ -51,8 +51,8 @@
     },
     {
       "name": "pideck-web-api/check-self-contained.mjs",
-      "sha256": "d577c40caa3f959b962a17b51cf3054800cbd1fa7cf53e5f793af1f79114da59",
-      "bytes": 4786
+      "sha256": "28224d644a6b6fa327a5064595bff35c2dad374efc12ce137eb2a4142ab9c220",
+      "bytes": 5249
     },
     {
       "name": "pideck-web-api/SKILL.md",

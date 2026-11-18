@@ -66,7 +66,7 @@ function selftest() {
   if (charCount(thin) >= NONEMPTY_MIN) { bad++; console.log("FAIL 自检：空对空样本没被判成内容不足"); }
   const ok = "对象 C:/x.md，md5 4ff58933，跑 node check.mjs 得 rc=0，跑完脏 0 行，这条消息本身带齐了路径、判据与期望返回。";
   if (charCount(ok) < NONEMPTY_MIN) { bad++; console.log("FAIL 自检：充足样本被误判成内容不足"); }
-  console.log(bad ? "selftest FAIL：" + bad + " 条" : "selftest PASS：" + (cases.length + 2) + " 条");
+  console.log(bad ? "selftest FAIL：" + bad + " 条" : "selftest PASS：" + (cases.length + 2) + " 条｜口径：只判离开文件的文字，不判语义矛盾（规则 A 与规则 B 打架那一类，机器判不了）");
   process.exit(bad ? 1 : 0);
 }
 
@@ -88,6 +88,7 @@ for (const f of files) {
   }
   const hits = scanText(text);
   for (const h of hits) { total++; console.log("  行 " + h.line + " " + h.rule + "：" + h.sample.slice(0, 60)); }
-  if (!hits.length) console.log("check-self-contained: " + f + " 命中 0 条");
+  if (!hits.length) console.log("check-self-contained: " + f + " 命中 0 条｜口径：只判离开文件的文字（消息、签核、PR 正文）；SKILL.md 内部的节号跳转合法，别拿它扫正文");
+  else console.log("  共 " + hits.length + " 条。扫正文时多数是假阳性——讲解规则的句子本身含节号（如「不写『按 5.6 办』」）；逐条看一遍再改，别按条数改。");
 }
 process.exit(total ? 1 : 0);
