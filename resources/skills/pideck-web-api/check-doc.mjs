@@ -200,8 +200,14 @@ console.log("7.2 端点 " + checked + " 条（路径 + 方法都比对），" + 
 // 7.1 的「额外 body 字段」列：源码 switch 里读到的 body.X 与文档必须一一对应。
 // 少写一个字段，读者就会漏传，服务端拿 undefined 当空值——静默做错事。
 const swStart = src[0].indexOf("switch (action)");
-const swEnd = swStart + 8000; // switch 体约 80 行；用固定窗口比找闭合括号稳（里面有多个 return true）
+const SW_WINDOW = 8000; // switch 体约 80 行；用固定窗口比找闭合括号稳（里面有多个 return true）。实测 3062（38%）
+const swEnd = swStart + SW_WINDOW;
 const swBody = swStart >= 0 ? src[0].slice(swStart, swEnd) : "";
+// 窗口守卫：switch 体一旦长到 8000，后面的 body.* 抓不到，字段变少、判据反而更绿——
+// 静默漏判比误报危险。实测 2979 字符（余量 2.7 倍），到这里就红，逼着先调大 swEnd。
+const swPct = swStart >= 0 ? Math.round((swBody.length / SW_WINDOW) * 100) : 0;
+console.log("switch 体 " + swBody.length + "/" + SW_WINDOW + " 字符（窗口占用 " + swPct + "%）");
+if (swStart >= 0 && swBody.length >= SW_WINDOW) { console.log("FAIL switch 体已到 " + SW_WINDOW + " 字符窗口上限，先调大它再判（否则字段静默漏抓、判据更绿）"); process.exit(1); }
 const bodyFields = new Set([...swBody.matchAll(/body\.([a-zA-Z]+)/g)].map((x) => x[1]));
 if (bodyFields.size < 8) { console.log("FAIL 源码 switch 里只切出 " + bodyFields.size + " 个 body 字段，判据自己坏了"); process.exit(1); }
 const docRowFields = sec71.split(/\r?\n/).filter((l) => /^\| \x60[a-z-]+\x60 \|/.test(l)).map((l) => l.split("|")[2]).join(" ");
