@@ -68,6 +68,10 @@ jobs:
         if: always()
         run: npm run check:package-json
 
+      - name: Check dsh declared version
+        if: always()
+        run: npm run check:dsh-version
+
       # 2026-11-15：本 PR 改了 4 个 SKILL.md 却没重生成 manifest，main CI 的
       # check:skills-manifest 会红，而 dev-guard 没挂这一条，PR 页面三个 check 全绿。
       # 纯 node、不联网、0.1 秒，符合本文件「秒级」的口径。
