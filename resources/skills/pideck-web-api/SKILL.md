@@ -426,7 +426,7 @@ curl -s -X POST -H "$AUTH" -H "Content-Type: application/json" -d '{}' \
   "$BASE/api/sessions/<sessionId>/runtime/activate"
 ```
 
-**`state` 是唯一能一次问清「它现在在干嘛」的动作。** 返回体套两层：`{result:{ok, value:{target, value:{...}}}}`，真正的字段在里层：
+**`state` 是唯一能一次问清「它现在在干嘛」的动作**——但这个「在干嘛」只覆盖进程此刻的状态：模型、是否在生成、上下文用掉多少。它答不了「它说过什么」（那是 `/messages`），也答不了「它接下来要做什么」（记录里没有这一项）。 返回体套两层：`{result:{ok, value:{target, value:{...}}}}`，真正的字段在里层：
 
 | 字段 | 读出来的意思 |
 |---|---|
@@ -449,16 +449,16 @@ curl -s -X POST -H "$AUTH" -H "Content-Type: application/json" -d '{}' \
 
 `check-doc.mjs` 会同时比路径与方法：它抓「源码里没有这条完整路由」和「方法列写错」。源码里用模板串拼出来的路由切不出整条时，正则会在边界上截出残缺串（裸 `/api`、通配 `/api/*`、带中文标点的注释片段）——这些不进台账，`--update-routes` 会跳过它们并打印跳了几条。判据只保证「台账里有的路由，源码里还在」，别指望它替你发现残缺串。
 
-| 端点 | 方法 | body / 查询 | 作用 |
-|---|---|---|---|
-| `/api/sessions` | POST | `projectId`（必填）`title` `model` `welcomeModel` `thinkingLevel` `backend` `agentPreset` `acpToolId` `sideTask` | 建一份草稿，返回 `{session}` |
-| `/api/sessions/anonymous` | POST | `projectId` `title` `backend` `model` `thinkingLevel` | 不写会话文件的一次性运行时 |
-| `/api/sessions/<id>/update` | POST | `title` `model` `thinkingLevel` `permissionPreset` `agentPreset` `backend` `acpToolId` `proxy` `sideTask` | 改会话记录 |
-| `/api/sessions/<id>/delete` | POST | — | 删记录 |
-| `/api/sessions/<id>/copy` | POST | — | 复制 |
-| `/api/sessions/<id>/export-html` | GET | — | 导出 |
-| `/api/sessions/<id>/reference-messages` | GET | — | 取被引用的消息 |
-| `/api/sessions/<id>/security-level` | POST | `levelId`（字符串或 `null`） | 换安全等级，`null` 表示跟全局默认 |
+| 端点 | 方法 | body / 查询 | 作用 | 回得去吗 |
+|---|---|---|---|---|
+| `/api/sessions` | POST | `projectId`（必填）`title` `model` `welcomeModel` `thinkingLevel` `backend` `agentPreset` `acpToolId` `sideTask` | 建一份草稿，返回 `{session}` | 删掉这份草稿 |
+| `/api/sessions/anonymous` | POST | `projectId` `title` `backend` `model` `thinkingLevel` | 不写会话文件的一次性运行时 | 无（不写会话文件，进程退出即无） |
+| `/api/sessions/<id>/update` | POST | `title` `model` `thinkingLevel` `permissionPreset` `agentPreset` `backend` `acpToolId` `proxy` `sideTask` | 改会话记录 | 再 update 改回；但标题已被首条消息改写过 |
+| `/api/sessions/<id>/delete` | POST | — | 删记录 | **回不去** |
+| `/api/sessions/<id>/copy` | POST | — | 复制 | 删掉副本 |
+| `/api/sessions/<id>/export-html` | GET | — | 导出 | 写文件，不改状态 |
+| `/api/sessions/<id>/reference-messages` | GET | — | 取被引用的消息 | 读，无副作用 |
+| `/api/sessions/<id>/security-level` | POST | `levelId`（字符串或 `null`） | 换安全等级，`null` 表示跟全局默认 | 换回旧的 levelId |
 
 `update` 把 `model` / `thinkingLevel` 传 `null` 当作「清掉覆盖、回到默认」。它**只改记录**：改标题立刻生效（下一次 `/api/state` 就能看到），但改模型对已经活着的进程不起作用，要换活进程的模型得用 7.1 的 `model`。
 
@@ -594,6 +594,8 @@ git log --oneline -1             # 能指到这次改动
 **别人的东西不进队列。** 有上游维护的仓、别人的技能、别人的 PR——没经用户明确批准，一律不碰、不报、不列进待办。判据：待办清单里出现不属于自己的仓或文件就红，一条也算。
 
 ## 10 验收：三级别
+
+**三级各是一条映射的验法，不是三个能力等级。** 第 1 级验「我 → 我的状态」这条路通不通；第 2 级验「别人 → 记录」通不通（注意它与「别人 → 进程」不是同一条，两个数组答的不是同一个问题）；第 3 级验「我 → 别人」这条路**改得动、也判得出送到了**。级别数字只表示路越来越长，不表示系统更强。
 
 按你做到哪一级说哪一级。
 
