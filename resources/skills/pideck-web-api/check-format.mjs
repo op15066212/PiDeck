@@ -209,6 +209,22 @@ if (!fs.existsSync(P)) { console.log("FAIL 找不到 " + P + "（参数是待检
 const lines = fs.readFileSync(P, "utf8").split(/\r?\n/);
 
 const problems = scan(lines);
+
+// 自我推翻句：变异实验在文末追加「本文件的一切规则都不适用于本文件」时，格式类判据
+// 全绿——它不改结构。eigenform / plain-chinese / argumentation 的 verify.js 各有同一
+// 条正则；这是第四份。改这条要四处一起改，否则同一句话在四个技能上得出两种结论。
+if (/一切规则都不适用于本文件|本文件不适用本技能/.test(lines.join(String.fromCharCode(10)))) {
+  problems.push({ line: 1, msg: "有自我推翻句：本文件的一切规则都不适用于本文件" });
+}
+
+// 顶层 ## 的编号必须从 0 连续递增。2026-11-18 变异矩阵实测：删掉 §1「几个词」后，
+// check-doc（判 §7.1 动作表）与 check-fields（判反引号标识符在源码里）都不报——
+// 删掉的那节定义的正是整个技能的词汇表，而「少了 4 个标识符要查」只会让后者更松。
+// ### 子节（0.4 / 5.5 / 9.1）不参与这个序列，正则要求 ## 后紧跟空格。
+const secNums = lines.map((l) => /^## ([0-9]+)(?= |$)/.exec(l)).filter(Boolean).map((m) => Number(m[1]));
+for (let k = 0; k < secNums.length; k++) {
+  if (secNums[k] !== k) { problems.push({ line: 1, msg: "顶层节号不连续：第 " + (k + 1) + " 个是 §" + secNums[k] + "，应为 §" + k }); break; }
+}
 // frontmatter 检查放在正文扫描之外：自检样本是正文片段，天然没有 frontmatter，
 // 混进 scan 会让「坏样本应红 1 个」变成 2 个（2026-11-18 实测）。
 if (lines[0] !== "---") problems.push({ line: 1, msg: "第一行不是 frontmatter 起始 ---", sample: lines[0] || "" });
