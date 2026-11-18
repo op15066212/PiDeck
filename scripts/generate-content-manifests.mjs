@@ -179,11 +179,24 @@ export function generateContentManifest({ domain = null, check = false, setVersi
 	}
 
 	let changed = false;
+	let diff = [];
 	if (!current) {
+		// 写之前读旧清单算逐文件差集。只报「generated / up to date」读不出改了哪几个，
+		// 而 skills-manifest drift 正是 CI 判红时要人看的东西。
+		try {
+			const old = JSON.parse(readFileSync(manifestPath, "utf8"));
+			const oldMap = new Map((old.files || []).map((f) => [f.name, f.sha256]));
+			const newMap = new Map(manifest.files.map((f) => [f.name, f.sha256]));
+			for (const [nm, h] of newMap) {
+				if (!oldMap.has(nm)) diff.push("新增 " + nm);
+				else if (oldMap.get(nm) !== h) diff.push("变更 " + nm);
+			}
+			for (const nm of oldMap.keys()) if (!newMap.has(nm)) diff.push("删除 " + nm);
+		} catch { }
 		writeFileSync(manifestPath, manifestText, "utf8");
 		changed = true;
 	}
-	return { ok: true, changed, manifestPath, version, fileCount: files.length, domain };
+	return { ok: true, changed, manifestPath, version, fileCount: files.length, domain, diff };
 }
 
 // 行尾诊断：工作树字节与仓库索引字节只差 CR 的文件。
@@ -285,6 +298,7 @@ if (isMainModule()) {
 			process.exitCode = 1;
 		} else {
 			console.log(`[content-manifest:${result.domain ?? "?"}] ${result.changed ? "generated" : "up to date"}: ${result.fileCount} files @ v${result.version}`);
+			for (const d of (result.diff || [])) console.log("  " + d);
 		}
 	} catch (error) {
 		console.error("[content-manifest] generation failed", error);
