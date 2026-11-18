@@ -83,4 +83,4 @@ if (failed.length) {
 	console.log("test:skills: " + STEPS.length + " 条，红 " + failed.length + " 条：" + failed.join("、"));
 	process.exit(1);
 }
-console.log("test:skills: " + STEPS.length + " 条全绿");
+console.log("test:skills: " + STEPS.length + " 条全绿（带「判据自检」的只验判据自己、不读正文；self-contained 只判「离开文件的文字」、round-robin 只判带轮次的签核，两者对 SKILL.md 本身按设计不跑）");
