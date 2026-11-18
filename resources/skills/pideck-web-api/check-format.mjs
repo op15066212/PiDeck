@@ -213,7 +213,11 @@ const problems = scan(lines);
 // 自我推翻句：变异实验在文末追加「本文件的一切规则都不适用于本文件」时，格式类判据
 // 全绿——它不改结构。eigenform / plain-chinese / argumentation 的 verify.js 各有同一
 // 条正则；这是第四份。改这条要四处一起改，否则同一句话在四个技能上得出两种结论。
-if (/一切规则都不适用于本文件|本文件不适用本技能/.test(lines.join(String.fromCharCode(10)))) {
+// 口径用宽版（与 argumentation 的 selfExempt 一致）：窄版只抓两种具体措辞，
+// 2026-11-18 实测「本文一律无效」窄版绿、宽版红——同一句话在两个技能上得出两种结论。
+// 已知上限：宽版也不抓「这份文档作废」（不匹配「本文件/本文/本文档」），那一类仍要人看。
+const selfDenyRe = new RegExp("本(?:文件|文|文档)[^。" + String.fromCharCode(10) + "]{0,30}(?:不适用|一律无效|作废)");
+if (selfDenyRe.test(lines.join(String.fromCharCode(10)))) {
   problems.push({ line: 1, msg: "有自我推翻句：本文件的一切规则都不适用于本文件" });
 }
 
