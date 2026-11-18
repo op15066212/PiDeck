@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "version": "1.0.0",
-  "bundleSha256": "5b715c4abbad6cbd62beadd61b7a58879b2946a2c4b3d8c02e88a307573bb98c",
+  "bundleSha256": "f89ca0a46eb65d36545c364e4c9d673b43e88c3cb111d82c28d81f1d732f0cd8",
   "fileCount": 12,
   "files": [
     {
@@ -26,28 +26,28 @@
     },
     {
       "name": "pideck-web-api/check-doc.mjs",
-      "sha256": "b2eda495cbc25d56df99a13292aa001c02a07b8dbada0023bdc09f6b173e5e33",
-      "bytes": 15798
+      "sha256": "efac97c7e28a78a740a0ff031103a07f6dbf14754057552d3d100e0bd8051be5",
+      "bytes": 15949
     },
     {
       "name": "pideck-web-api/check-fields.mjs",
-      "sha256": "ffbf42d9fc6153e754ec901127c23e2c5ffc6a4f72e1bc0ba55a876c7dd0ff19",
-      "bytes": 5759
+      "sha256": "18747b3a82d07ec42e2331cb8778c8004ea4d7b27361ad3da08dfb91a483afc3",
+      "bytes": 6014
     },
     {
       "name": "pideck-web-api/check-format.mjs",
-      "sha256": "18e6af3d0eee00520c52d55221a291cc3b05d696bd646bb7e2a3ba091388a0ae",
-      "bytes": 12949
+      "sha256": "ec8dcc68e64b84ad3d00a1485551685aad074dcd657ff6474c48f2746d148d77",
+      "bytes": 13029
     },
     {
       "name": "pideck-web-api/check-paths.mjs",
-      "sha256": "8920f0cf2eae0fb42ea22fb515222f97c264effe8cc56383fe83a68af25d0370",
-      "bytes": 7490
+      "sha256": "373e53b04ee4742b1d57a95c06566c4927709a05f69287f0c4f72e95602a4214",
+      "bytes": 7545
     },
     {
       "name": "pideck-web-api/check-round-robin.mjs",
-      "sha256": "c08257ac3b4c31c71b4182c4fada8bf32ffe283d7231a83d9ae369ac6c1d1fd3",
-      "bytes": 21504
+      "sha256": "6edb84dc852472a7258affc6401d094315156b7f5411a7c2f87ce8c29ab9bf47",
+      "bytes": 21567
     },
     {
       "name": "pideck-web-api/check-self-contained.mjs",

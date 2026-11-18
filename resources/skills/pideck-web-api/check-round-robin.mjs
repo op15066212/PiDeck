@@ -265,7 +265,7 @@ if (!entries.length) {
 const { bad, history } = check(entries);
 for (const h of history) console.log("历史 " + h + "（基线内，不拦）");
 if (!bad.length) {
-  console.log("check-round-robin: " + entries.length + " 份签核，" + entries.map((e) => "R" + e.round).join("/") + " 全部成立（发现者=修改者，修改者≠复核者）");
+  console.log("check-round-robin: " + entries.length + " 份签核，" + entries.map((e) => "R" + e.round).join("/") + " 全部成立（发现者=修改者，修改者≠复核者）｜口径：只管写了「轮次」的签核，没写的不判");
   process.exit(0);
 }
 for (const b of bad) console.log("红 " + b);

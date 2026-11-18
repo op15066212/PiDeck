@@ -39,15 +39,17 @@ function check(skillPath, blob) {
   const doc = fs.readFileSync(skillPath, "utf8");
   const re = new RegExp(TICK + "([A-Za-z][A-Za-z0-9_.]{2,40})" + TICK, "g");
   const words = new Set();
+  const loc = new Map();
   let m;
   while ((m = re.exec(doc))) {
     const w = m[1];
     if (w.includes("/") || w.includes(":") || w.endsWith(".mjs") || w.endsWith(".ts")) continue;
+    if (!loc.has(w)) loc.set(w, doc.slice(0, m.index).split(String.fromCharCode(10)).length);
     words.add(w);
   }
   const hit = (w) => blob.includes(w) || (w.includes(".") && blob.includes(w.split(".").pop()));
   const miss = [...words].filter((w) => !hit(w));
-  return { total: words.size, miss };
+  return { total: words.size, miss, loc };
 }
 
 if (SELFTEST) {
@@ -80,10 +82,10 @@ const MAX_FILES = 5000;
 const { blob, files } = collect(SRC);
 if (files > MAX_FILES) { console.log("FAIL 扫到 " + files + " 个 .ts，超过上限 " + MAX_FILES + "：源码目录里是不是进了生成文件？确认后把上限调大"); process.exit(1); }
 if (files < 100) { console.log("FAIL 只读到 " + files + " 个 .ts，源码目录不完整 " + SRC + "（用 --src= 指向完整 src）；这是环境缺失，rc=2"); process.exit(2); }
-const { total, miss } = check(SKILL, blob);
+const { total, miss, loc } = check(SKILL, blob);
 if (miss.length) {
   console.log("FAIL " + SKILL + "：反引号标识符 " + total + " 个，源码里零命中 " + miss.length + " 个");
-  for (const w of miss) console.log("  源码里找不到：" + w);
+  for (const w of miss) console.log("  源码里找不到：" + w + "（" + path.basename(SKILL) + " 第 " + loc.get(w) + " 行）");
   process.exit(1);
 }
-console.log("PASS " + SKILL + "：反引号标识符 " + total + " 个，全部在源码里出现（" + files + " 个 .ts）");
+console.log("PASS " + SKILL + "：反引号标识符 " + total + " 个，全部在源码里出现（" + files + " 个 .ts）｜口径：只判是否在源码出现，不判用对没对");

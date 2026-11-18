@@ -125,5 +125,5 @@ for (const p of uniq) {
 for (const f of foreignPaths(skill)) { console.log("  文档里写了本机路径: " + f); bad++; }
 
 console.log("文档里 " + uniq.length + " 条 /api 路径，" + (bad ? bad + " 处段对不上" : "每一段都在源码里"));
-console.log(bad ? "FAIL" : "PASS");
+console.log(bad ? "FAIL" : "PASS ｜口径：只按段比对，抓不到段的顺序错");
 process.exit(bad ? 1 : 0);

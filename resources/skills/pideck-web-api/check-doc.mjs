@@ -217,5 +217,5 @@ if (!docFields.size) { console.log("FAIL 7.1 的字段列一行都没匹配到")
 for (const f of bodyFields) if (!docFields.has(f)) { console.log("  7.1 漏了字段 " + f + "（源码读过 body." + f + "）"); bad++; }
 for (const f of docFields) if (!bodyFields.has(f)) { console.log("  7.1 多写了字段 " + f + "（源码 switch 里没读）"); bad++; }
 
-console.log(okA && !bad ? "PASS" : "FAIL");
+console.log(okA && !bad ? "PASS ｜口径：只保证台账里有的路由源码里还在、方法列对；抓不到模板串拼出来的路由；源码新增路由只提示不判红" : "FAIL");
 process.exit(okA && !bad ? 0 : 1);
