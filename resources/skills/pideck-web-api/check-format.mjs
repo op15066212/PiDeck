@@ -209,6 +209,19 @@ if (!fs.existsSync(P)) { console.log("FAIL 找不到 " + P + "（参数是待检
 const lines = fs.readFileSync(P, "utf8").split(/\r?\n/);
 
 const problems = scan(lines);
+// frontmatter 检查放在正文扫描之外：自检样本是正文片段，天然没有 frontmatter，
+// 混进 scan 会让「坏样本应红 1 个」变成 2 个（2026-11-18 实测）。
+if (lines[0] !== "---") problems.push({ line: 1, msg: "第一行不是 frontmatter 起始 ---", sample: lines[0] || "" });
+else {
+  const end = lines.indexOf("---", 1);
+  if (end < 0) problems.push({ line: 1, msg: "frontmatter 没有结束 ---" });
+  else {
+    const fm = lines.slice(1, end).join(String.fromCharCode(10));
+    for (const k of ["name", "description"]) {
+      if (!new RegExp("^" + k + ":", "m").test(fm)) problems.push({ line: 1, msg: "frontmatter 缺 " + k });
+    }
+  }
+}
 for (const p of problems) console.log("  行 " + p.line + " " + p.msg + (p.sample ? ": " + p.sample.slice(0, 60) : ""));
 
 // 空对空不算通过：零字节或只剩一句话的文件里没有可查的结构，上面几条会全绿。
