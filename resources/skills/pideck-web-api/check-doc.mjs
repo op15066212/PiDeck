@@ -153,7 +153,8 @@ const routeList = [...routes].filter((r) => {
 }).sort();
 if (process.argv.includes("--update-routes")) {
   if (skipped.length) console.log("跳过 " + skipped.length + " 条残缺串：" + skipped.join(" | "));
-  fs.writeFileSync(LEDGER, JSON.stringify({ updated: "2026-11-16", routes: routeList }, null, 2) + "\n");
+  // 不写 updated：没有消费者，git 已经记着这个文件什么时候改的。写死的日期更是第二个 bug。
+  fs.writeFileSync(LEDGER, JSON.stringify({ routes: routeList }, null, 2) + "\n");
   console.log("已写 " + LEDGER + "（" + routeList.length + " 条）");
   process.exit(0);
 }

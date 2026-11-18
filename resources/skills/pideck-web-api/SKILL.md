@@ -348,7 +348,7 @@ curl -s -X POST -H "$AUTH" -H "Content-Type: application/json" \
 | 目标本来就没在跑 | 200 | `{"result":{"ok":false,"error":{"code":"SESSION_RUNTIME_UNAVAILABLE"}}}` |
 | URL 与 body 的 sessionId 不一致 / 没给 target | 400 | `{"code":"webError.runtimeTargetRequired"}` |
 
-**`runtimeGeneration` 有两种语义。** 其余 20 个运行时动作走 `requireBoundTarget`：代号与绑定都比，传错返回 `SESSION_RUNTIME_CHANGED`，命令不执行。`stop` 走 `resolveStopTarget`：只要有 live 绑定的 `agentId` 就取当前代号，传什么代号都不拦。所以 `stop` 唯一的闸是 `agentId`，且它比路径里的 sessionId 更权威（见 7.1）。
+**`runtimeGeneration` 有两种语义。** 其余动作（除 `activate` 外）走 `requireBoundTarget`：代号与绑定都比，传错返回 `SESSION_RUNTIME_CHANGED`，命令不执行。`stop` 走 `resolveStopTarget`：只要有 live 绑定的 `agentId` 就取当前代号，传什么代号都不拦。所以 `stop` 唯一的闸是 `agentId`，且它比路径里的 sessionId 更权威（见 7.1）。
 
 **重启之后你是新进程**，不记得上一个进程在干什么。会话历史仍在同一个 jsonl（`runtimes[].sessionPath`），上下文不丢，但「成没成」只能由重启后的一方重读 `runtimes[]` 确认。
 
@@ -371,13 +371,13 @@ curl -s -X POST -H "$AUTH" -H "Content-Type: application/json" -d '{}' \
 
 返回 `{"deleted":true}`。删除只走 `POST .../delete`，`DELETE /api/sessions/<id>` 不存在。先 stop 再 delete。删不存在的 id 返回 `{"deleted":false}`，HTTP 仍是 200，那不是失败。
 
-## 7 动作：运行时 21 个，记录层 8 个
+## 7 动作：运行时与记录层
 
 两套东西别混：**运行时动作**动的是活着的进程，**记录层动作**只改会话记录。改记录不会让正在跑的进程换模型，停进程也不会删掉记录。
 
 ### 7.1 运行时动作：`/api/sessions/<id>/runtime/<action>`
 
-全部 21 个，从源码 `WebApiRoutes.ts` 的路由正则逐条抄出：
+全部动作，从源码 `WebApiRoutes.ts` 的路由正则逐条抄出：
 
 | action | 额外 body 字段 | 作用 |
 |---|---|---|
@@ -403,7 +403,7 @@ curl -s -X POST -H "$AUTH" -H "Content-Type: application/json" -d '{}' \
 | `rewind-restore` | `checkpointId` `scope` | 回滚到某检查点 |
 | `export-html` | — | 导出成 HTML |
 
-`activate` 是唯一不要 target 的——它要做的正是「这个冷会话现在起来」，没有 target 可回传。其余 20 个都要 `body.target.sessionId` 与路径里的 id 完全相同，不一致返回 400 `webError.runtimeTargetRequired`。
+`activate` 是唯一不要 target 的——它要做的正是「这个冷会话现在起来」，没有 target 可回传。其余都要 `body.target.sessionId` 与路径里的 id 完全相同，不一致返回 400 `webError.runtimeTargetRequired`。
 
 `target.agentId` 在所有命令上都是真闸；`target.runtimeGeneration` 只在非 `stop` 的命令上是真闸（`stop` 用 live 绑定，见本节前面那段）。两个字段被拒时返回的不是同一个码：
 
@@ -639,7 +639,7 @@ node resources/skills/pideck-web-api/check-doc.mjs --update-routes   # 重写 ch
 
 带 `--selftest` 的是 `check-paths`、`check-format`、`check-fields`、`check-self-contained` 四个，能脱离源码单独验「判据自己还对不对」（装了 PiDeck 的机器上只有这份副本，没有 `src/main`）。`check-doc` 没有自检：传 `--selftest` 会直接 rc=2 并打印「check-doc 没有自检」，因为它的每条判据都要真的路由表，源码不在就报 rc=2——那是环境不全，不是判据失败。
 
-`check-doc.mjs` 还要读同目录的 `check-doc-routes.json`：60 条路由的台账，生成物，别手改。源码里少了一条台账里有的路由，它逐条打印并判 rc=1，所以删路由必须连台账一起改、在提交信息里说明为什么。台账缺失也判 rc=1，那是部署不全不是环境缺失。源码新增路由只提示不判红，否则每改一次源码都会红，这条判据就没人用了。残缺串（裸 `/api`、通配 `/api/*`、带中文的注释片段）不进台账，`--update-routes` 会跳过并打印跳了几条。
+`check-doc.mjs` 还要读同目录的 `check-doc-routes.json`：路由台账，`--update-routes` 生成，别手改。源码里少了一条台账里有的路由，它逐条打印并判 rc=1，所以删路由必须连台账一起改、在提交信息里说明为什么。台账缺失也判 rc=1，那是部署不全不是环境缺失。源码新增路由只提示不判红，否则每改一次源码都会红，这条判据就没人用了。残缺串（裸 `/api`、通配 `/api/*`、带中文的注释片段）不进台账，`--update-routes` 会跳过并打印跳了几条。
 
 口径上限写在各自文件头：`check-paths` 只按段比对、抓不到顺序错；`check-doc` 抓不到模板串拼出来的路由；`check-fields` 要读全量 src，克隆不完整时用 `--src=<完整 src 目录>` 指过去，别删它求绿。
 
