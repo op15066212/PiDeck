@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "version": "1.0.0",
-  "bundleSha256": "1b4fa14faf6e636fdc75e8b1894ff58628980351435554ad187b8dedbb1847eb",
+  "bundleSha256": "976b9b1af6324e78356d99cf554e9a93dd4eae93dc514cb2ed9017bc81c3837a",
   "fileCount": 12,
   "files": [
     {
@@ -46,8 +46,8 @@
     },
     {
       "name": "pideck-web-api/check-round-robin.mjs",
-      "sha256": "df402136d828954eeb9b37af7e14de4d17e4a80f6f0cef0126fac638ad26f1b9",
-      "bytes": 20874
+      "sha256": "c08257ac3b4c31c71b4182c4fada8bf32ffe283d7231a83d9ae369ac6c1d1fd3",
+      "bytes": 21504
     },
     {
       "name": "pideck-web-api/check-self-contained.mjs",
@@ -56,8 +56,8 @@
     },
     {
       "name": "pideck-web-api/SKILL.md",
-      "sha256": "604f5cf720397837d57ab207db37e31e2164ba39aada000dc2d075b3da8681ac",
-      "bytes": 51930
+      "sha256": "270c4c6052301391cdbefdb44c338d7ac921be307ef37d51d7a7e09985db7915",
+      "bytes": 51932
     },
     {
       "name": "usage-probe/SKILL.md",
