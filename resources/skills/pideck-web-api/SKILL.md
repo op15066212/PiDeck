@@ -637,7 +637,7 @@ node resources/skills/pideck-web-api/check-self-contained.mjs --selftest  # 判�
 node resources/skills/pideck-web-api/check-doc.mjs --update-routes   # 重写 check-doc-routes.json，并打印跳过几条残缺串
 ```
 
-带 `--selftest` 的是 `check-paths`、`check-format`、`check-fields`、`check-self-contained` 四个，能脱离源码单独验「判据自己还对不对」（装了 PiDeck 的机器上只有这份副本，没有 `src/main`）。`check-doc` 没有自检：传 `--selftest` 会直接 rc=2 并打印「check-doc 没有自检」，因为它的每条判据都要真的路由表，源码不在就报 rc=2——那是环境不全，不是判据失败。
+带 `--selftest` 的有 `check-paths`、`check-format`、`check-fields`、`check-self-contained`、`check-round-robin`（协作署名：谁发现谁改、换手复核；不带参数时扫目录，没有带「轮次」的签核就跳过）——它们能脱离源码单独验「判据自己还对不对」（装了 PiDeck 的机器上只有这份副本，没有 `src/main`）。`check-doc` 没有自检：传 `--selftest` 会直接 rc=2 并打印「check-doc 没有自检」，因为它的每条判据都要真的路由表，源码不在就报 rc=2——那是环境不全，不是判据失败。
 
 `check-doc.mjs` 还要读同目录的 `check-doc-routes.json`：路由台账，`--update-routes` 生成，别手改。源码里少了一条台账里有的路由，它逐条打印并判 rc=1，所以删路由必须连台账一起改、在提交信息里说明为什么。台账缺失也判 rc=1，那是部署不全不是环境缺失。源码新增路由只提示不判红，否则每改一次源码都会红，这条判据就没人用了。残缺串（裸 `/api`、通配 `/api/*`、带中文的注释片段）不进台账，`--update-routes` 会跳过并打印跳了几条。
 
