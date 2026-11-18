@@ -154,8 +154,16 @@ const routeList = [...routes].filter((r) => {
 if (process.argv.includes("--update-routes")) {
   if (skipped.length) console.log("跳过 " + skipped.length + " 条残缺串：" + skipped.join(" | "));
   // 不写 updated：没有消费者，git 已经记着这个文件什么时候改的。写死的日期更是第二个 bug。
+  // 写之前先读旧台账，把增删报出来。只报总条数读不出「这次动了什么」，
+  // 而台账是删路由时必须同步改的东西——读不出差，就没法在提交信息里说清为什么。
+  let old = [];
+  try { old = JSON.parse(fs.readFileSync(LEDGER, "utf8")).routes || []; } catch { }
+  const added = routeList.filter((r) => !old.includes(r));
+  const removed = old.filter((r) => !routeList.includes(r));
   fs.writeFileSync(LEDGER, JSON.stringify({ routes: routeList }, null, 2) + "\n");
-  console.log("已写 " + LEDGER + "（" + routeList.length + " 条）");
+  console.log("已写 " + LEDGER + "（" + routeList.length + " 条）" +
+    (added.length ? "，新增 " + added.length + "：" + added.join(" ") : "") +
+    (removed.length ? "，删除 " + removed.length + "：" + removed.join(" ") : ""));
   process.exit(0);
 }
 if (!fs.existsSync(LEDGER)) { console.log("FAIL 路由台账 " + LEDGER + " 不存在，先跑 node check-doc.mjs --update-routes"); process.exit(1); }
