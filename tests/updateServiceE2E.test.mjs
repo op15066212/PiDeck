@@ -830,6 +830,7 @@ test("real updater setFeedUrl: github -> mirror -> github round trip rebuilds th
 	const electronUpdaterStub = {
 		autoUpdater: {
 			autoDownload: true,
+			isUpdateSupported: () => true,
 			setFeedURL: (config) => setFeedURLCalls.push(config),
 			on: () => {},
 			off: () => {},

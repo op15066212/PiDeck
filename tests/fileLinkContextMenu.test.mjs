@@ -63,11 +63,11 @@ test("系统打开一律使用解析后的路径，不透传原始 href", () => 
 	assert.doesNotMatch(linkSource, /desktopApi\.files\.open\(\s*(fileLinkPath|props\.href|fileLinkRawPath)/);
 });
 
-test("菜单只挂文件链接，且无可解析路径时不弹", () => {
-	assert.match(linkSource, /onContextMenu=\{(?:isFileLink \|\| isLocalRef) \? handleContextMenu : undefined\}/);
-	assert.match(linkSource, /const\s+handleContextMenu\s*=[\s\S]{0,200}?if\s*\(!menuPath\)\s*return;/);
-	// 菜单渲染整体以 menuPath 为守卫，避免打开一个空菜单
-	assert.match(linkSource, /\{menu\s*&&\s*menuPath\s*&&\s*\(/);
+test("右键菜单仅对文件路径或 web 链接生效", () => {
+	assert.match(linkSource, /onContextMenu=\{isFileLink \|\| isLocalRef \|\| webLink \? handleContextMenu : undefined\}/);
+	assert.match(linkSource, /const\s+handleContextMenu\s*=[\s\S]{0,200}?if\s*\(!menuPath\s*&&\s*!webLink\)\s*return;/);
+	// 菜单仅在存在可打开路径或 web 链接时渲染。
+	assert.match(linkSource, /\{menu\s*&&\s*\(menuPath \|\| webLink\)\s*&&\s*\(/);
 });
 
 // 项目外引用（issue：AI 生成/操作在项目外的文件点不开）：左键由 App 侧的安全等级门
